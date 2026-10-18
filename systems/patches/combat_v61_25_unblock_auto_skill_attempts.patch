@@ -1,25 +1,25 @@
 --- a/systems/combat.lua
 +++ b/systems/combat.lua
-@@ -1,15 +1,13 @@
--        -- V61.34: don't require a discovered GUI callback before trying skills.
--        -- castSkill falls back to Q/E/R input when a button callback is absent.
--        if skillReady("SkillU") then
--            castSkill("SkillU")
--        end
--        if skillReady("Skill2") then
--            castSkill("Skill2")
--        end
--        if skillReady("Skill1") then
--            castSkill("Skill1")
--        end
-+        -- V61.36: attempt Skill1 first, then Skill2, then SkillU.
-+        -- Do not let a stale/misread cooldown attribute suppress attempts.
-+        castSkill("Skill1")
-+        task.wait(0.12)
-+        castSkill("Skill2")
-+        task.wait(0.12)
-+        castSkill("SkillU")
-+        task.wait(0.12)
+@@ -1,13 +1,15 @@
+-        -- V61.36: attempt Skill1 first, then Skill2, then SkillU.
+-        -- Do not let a stale/misread cooldown attribute suppress attempts.
+-        castSkill("Skill1")
+-        task.wait(0.12)
+-        castSkill("Skill2")
+-        task.wait(0.12)
+-        castSkill("SkillU")
+-        task.wait(0.12)
++        -- Respect the game's actual cooldown state before each cast attempt.
++        -- castSkill also checks readiness, matching the keyboard-trigger path.
++        if skillReady("Skill1") then
++            castSkill("Skill1")
++        end
++        if skillReady("Skill2") then
++            castSkill("Skill2")
++        end
++        if skillReady("SkillU") then
++            castSkill("SkillU")
++        end
  
          if os.clock() - lastBasic >= CFG.BASIC_INTERVAL then
              basicAttack(enemy)
