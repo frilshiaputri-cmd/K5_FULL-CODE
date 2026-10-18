@@ -1,0 +1,28 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -6104,21 +6104,4 @@
+-        -- SkillU is charge-gated. V61.31 additionally reserves it for a true
+-        -- account-relative threat instead of every 1500+ HP medium mob.
+-        elseif Callbacks.SkillU
+-            and enemyHealth(enemy)
+-            and enemyHealth(enemy)
+-                >= math.max(
+-                    tonumber(CFG.ADAPTIVE_BOSS_HP)
+-                        or 1500,
+-                    (
+-                        Humanoid
+-                        and tonumber(Humanoid.MaxHealth)
+-                        or 0
+-                    )
+-                        * (
+-                            tonumber(
+-                                CFG.ADAPTIVE_THREAT_PLAYER_HP_MULTIPLIER
+-                            )
+-                            or 3.0
+-                        )
+-                )
+-            and skillReady("SkillU")
++        -- V61.33: no enemy-HP or player-level gate; use SkillU whenever ready.
++        elseif Callbacks.SkillU
++            and skillReady("SkillU")
+         then
