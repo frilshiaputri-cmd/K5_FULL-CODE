@@ -229,7 +229,7 @@ getgenv().IronSoulStatus = status
 -- Default cap: level 40. Stop farming and kick this player from the
 -- current server as soon as the authoritative level reaches the cap.
 --========================================================--
-local LEVEL_STOP = tonumber(Config.LEVEL_STOP) or 40
+local LEVEL_STOP = math.max(1, tonumber(Config.LEVEL_STOP) or 40)
 getgenv().IronSoulLevelStopReached = false
 
 if LEVEL_STOP > 0 then
@@ -238,7 +238,31 @@ if LEVEL_STOP > 0 then
         local dataModule
 
         local function readLevel()
-            local attrLevel = tonumber(LocalPlayer:GetAttribute("LG_Level"))
+            -- Read common replicated level attributes first; LG_Level remains the
+            -- primary game-specific source, while aliases cover runtime variants.
+            local bestLevel = 0
+            for _, attrName in ipairs({"LG_Level", "Level", "PlayerLevel", "Player_Level"}) do
+                local okAttr, raw = pcall(function()
+                    return LocalPlayer:GetAttribute(attrName)
+                end)
+                local n = okAttr and tonumber(raw) or nil
+                if n and n > bestLevel then bestLevel = n end
+            end
+
+            -- Also inspect common leaderstats values, when the game exposes them.
+            local stats = LocalPlayer:FindFirstChild("leaderstats")
+            if stats then
+                for _, value in ipairs(stats:GetDescendants()) do
+                    if value:IsA("IntValue") or value:IsA("NumberValue") or value:IsA("StringValue") then
+                        local name = string.lower(value.Name)
+                        if name == "level" or name == "playerlevel" or name == "lg_level" then
+                            local n = tonumber(value.Value)
+                            if n and n > bestLevel then bestLevel = n end
+                        end
+                    end
+                end
+            end
+
             if not dataModule or not dataModule.Parent then
                 dataModule = nil
                 for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
@@ -257,13 +281,13 @@ if LEVEL_STOP > 0 then
                     end)
                     if okData and type(data) == "table" and type(data.LevelData) == "table" then
                         local dataLevel = tonumber(data.LevelData.Level)
-                        if dataLevel then
-                            return math.max(dataLevel, attrLevel or 0)
-                        end
+                        if dataLevel and dataLevel > bestLevel then bestLevel = dataLevel end
                     end
                 end
             end
-            return attrLevel
+
+            if bestLevel > 0 then return bestLevel end
+            return nil
         end
 
         while LocalPlayer and LocalPlayer.Parent do
