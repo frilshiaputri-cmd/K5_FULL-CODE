@@ -1,4 +1,46 @@
 -- IRON SOUL - V61.21 COMBAT ENTRY
+
+-- HARD LEVEL CAP: do not start or continue dungeon combat at the configured level limit (default 40).
+-- bootstrap_v61_11 also monitors this while the dungeon is running.
+do
+    if getgenv().IronSoulLevelStopReached then
+        return false
+    end
+
+    local Players = game:GetService("Players")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local player = Players.LocalPlayer
+    local cap = tonumber((getgenv().IronSoulConfig or {}).LEVEL_STOP) or 40
+    local level = tonumber(player:GetAttribute("LG_Level"))
+
+    if not level then
+        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+            if obj:IsA("ModuleScript") and obj.Name == "DataUtil" then
+                local ok, util = pcall(require, obj)
+                if ok and type(util) == "table" and type(util.GetPlayerData) == "function" then
+                    local okData, data = pcall(function()
+                        return util:GetPlayerData(player)
+                    end)
+                    if okData and type(data) == "table" and type(data.LevelData) == "table" then
+                        level = tonumber(data.LevelData.Level)
+                    end
+                end
+                if level then break end
+            end
+        end
+    end
+
+    if cap > 0 and level and level >= cap then
+        getgenv().IronSoulLevelStopReached = true
+        getgenv().IronSoulLevelStopLevel = level
+        if type(getgenv().IronSoulConfig) == "table" then
+            getgenv().IronSoulConfig.FARM = "OFF"
+        end
+        -- Do not kick here: the lobby reward handler must run first.
+        return false
+    end
+end
+
 --
 -- World1 V61.15 remains frozen/stable. Validated Cave PlaceIds redirect once
 -- through systems/cave.lua, which owns one-run Cave settlement/ticket policy
@@ -26,6 +68,16 @@ then
     return caveResult
 end
 
+-- K5-HUB V1 explicitly enables the same native V2 combat Auto Skill chain.
+do
+    local env = getgenv()
+    env.IronSoulConfig = env.IronSoulConfig or {}
+    env.IronSoulConfig.AutoSkill = true
+    env.K5V1NativeAutoSkill = true
+end
+
+-- Auto Skill dijalankan oleh sistem native V2 di combat patch chain di bawah.
+-- Hindari modul systems/auto_skill.lua (input keyboard Q/E/R) agar tidak duplikat.
 local originalLoadRaw = getgenv().IronSoulLoadRaw
 
 local function getPatcher()
@@ -39,7 +91,7 @@ local function getPatcher()
     end
 
     local source = game:HttpGet(
-        "https://raw.githubusercontent.com/frilshiaputri-cmd/K5_FULL-CODE/main/systems/patch_loader.lua?t="
+        "https://raw.githubusercontent.com/frilshiaputri-cmd/Ironsoulkaitun/main/systems/patch_loader.lua?t="
             .. tostring(os.time())
     )
 
@@ -85,15 +137,6 @@ if type(originalLoadRaw) == "function" then
     end)
 end
 
--- K5 mobile Auto Skill: use the native combat skill chain and mobile GUI button patches.
--- Avoid the separate keyboard E/Q/R worker; it does not activate Android touch controls.
-do
-    local env = getgenv()
-    env.IronSoulConfig = env.IronSoulConfig or {}
-    env.IronSoulConfig.AutoSkill = true
-    env.K5V1NativeAutoSkill = true
-end
-
 -- Keep an unredirected loader available to the wrappers so they can reuse the
 -- proven underlying transition/watchdog modules without recursion.
 getgenv().IronSoulDependencyBaseLoadRaw = originalLoadRaw
@@ -110,7 +153,7 @@ local function routedLoadRaw(path)
     end
 
     local source = game:HttpGet(
-        "https://raw.githubusercontent.com/MUshihara/ironsoulkaitun/main/"
+        "https://raw.githubusercontent.com/frilshiaputri-cmd/Ironsoulkaitun/main/"
             .. tostring(path)
             .. "?t="
             .. tostring(os.time())
@@ -127,9 +170,14 @@ end
 
 getgenv().IronSoulLoadRaw = routedLoadRaw
 
+local skillStatus = getgenv().IronSoulStatus
+if type(skillStatus) == "function" then
+    pcall(skillStatus, "V1 Auto Skill | applying native V2 combat patches")
+end
+
 local ok, result = pcall(function()
     return getPatcher()({
-        repository = "frilshiaputri-cmd/K5_FULL-CODE",
+        repository = "frilshiaputri-cmd/Ironsoulkaitun",
         base_repository = "MUshihara/ironsoulkaitun",
         base_commit = "1d47f7f50ec8ecd92bca691b17d586d6bdecfa55",
         path = "systems/combat.lua",
@@ -145,6 +193,7 @@ local ok, result = pcall(function()
             "systems/patches/combat_v61_14_far_traversal_tween.patch",
             "systems/patches/combat_v61_14_3_fast_settlement.patch",
             "systems/patches/combat_v61_15_skill_input_fallback.patch",
+            "systems/patches/combat_v61_22_skill_no_local_level_gate.patch",
             "systems/patches/combat_v61_23_auto_skill_u.patch",
             "systems/patches/combat_v61_24_force_auto_skill_cycle.patch",
             "systems/patches/combat_v61_25_unblock_auto_skill_attempts.patch",
@@ -156,7 +205,18 @@ end)
 getgenv().IronSoulLoadRaw = originalLoadRaw
 
 if not ok then
-    error(result)
+    -- Never silently run the unpatched upstream combat: that build does not
+    -- include the V1-connected native V2 Auto Skill chain.
+    local status = getgenv().IronSoulStatus
+    if type(status) == "function" then
+        pcall(status, "ERROR | native Auto Skill patch chain failed | " .. tostring(result))
+    end
+    error("K5-HUB V1 native Auto Skill patch chain failed: " .. tostring(result))
+end
+
+local status = getgenv().IronSoulStatus
+if type(status) == "function" then
+    pcall(status, "V1 Auto Skill | native V2 combat patches active")
 end
 
 return result
