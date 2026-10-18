@@ -224,6 +224,66 @@ end
 
 getgenv().IronSoulStatus = status
 
+--========================================================--
+-- LEVEL CAP GUARD (K5_FULL-CODE)
+-- Default cap: level 30. Read PlayerData first, attribute as fallback.
+-- When the cap is reached, stop farming; allow the current dungeon to
+-- finish/return to Lobby, but do not queue another farm run from Lobby.
+--========================================================--
+local LEVEL_STOP = tonumber(Config.LEVEL_STOP) or 30
+getgenv().IronSoulLevelStopReached = false
+
+if LEVEL_STOP > 0 then
+    task.spawn(function()
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local dataModule
+
+        local function readLevel()
+            local attrLevel = tonumber(LocalPlayer:GetAttribute("LG_Level"))
+            if not dataModule or not dataModule.Parent then
+                dataModule = nil
+                for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
+                    if obj:IsA("ModuleScript") and obj.Name == "DataUtil" then
+                        dataModule = obj
+                        break
+                    end
+                end
+            end
+
+            if dataModule then
+                local ok, util = pcall(require, dataModule)
+                if ok and type(util) == "table" and type(util.GetPlayerData) == "function" then
+                    local okData, data = pcall(function()
+                        return util:GetPlayerData(LocalPlayer)
+                    end)
+                    if okData and type(data) == "table" and type(data.LevelData) == "table" then
+                        local dataLevel = tonumber(data.LevelData.Level)
+                        if dataLevel then
+                            return math.max(dataLevel, attrLevel or 0)
+                        end
+                    end
+                end
+            end
+            return attrLevel
+        end
+
+        while LocalPlayer and LocalPlayer.Parent do
+            local level = readLevel()
+            if level and level >= LEVEL_STOP then
+                getgenv().IronSoulLevelStopReached = true
+                getgenv().IronSoulLevelStopLevel = level
+                if type(getgenv().IronSoulConfig) == "table" then
+                    getgenv().IronSoulConfig.FARM = "OFF"
+                end
+                status("LEVEL CAP | Lv" .. tostring(level) .. "/" .. tostring(LEVEL_STOP) .. " | farming stopped")
+                break
+            end
+            task.wait(1)
+        end
+    end)
+end
+
+
 status(
     "Boot | "
         .. tostring(Caps.Executor)
@@ -410,6 +470,13 @@ local function loadRaw(path)
 end
 
 local function queueBootstrap(reason)
+    if getgenv().IronSoulLevelStopReached == true
+        and (game.PlaceId == LOBBY_PLACE_ID or workspace:GetAttribute("WorldName") == "Lobby")
+    then
+        status("LEVEL CAP | Lobby reached; next farm run blocked")
+        return false
+    end
+
     local payload = string.format([[
 task.wait(1.35)
 getgenv().IronSoulConfig = getgenv().IronSoulConfig or {
@@ -417,6 +484,7 @@ getgenv().IronSoulConfig = getgenv().IronSoulConfig or {
     FARM = %q,
     TICKETS = %q,
     HEADLESS = %s,
+    LEVEL_STOP = %s,
 }
 loadstring(game:HttpGet(
     %q .. "?isv=61.11&t=" .. tostring(os.time())
@@ -426,6 +494,7 @@ loadstring(game:HttpGet(
         tostring(Config.FARM or "NEWBIE"),
         tostring(Config.TICKETS or "SMART"),
         tostring(Config.HEADLESS ~= false),
+        tostring(tonumber(Config.LEVEL_STOP) or 30),
         BASE .. "bootstrap_v61_11.lua"
     )
 
