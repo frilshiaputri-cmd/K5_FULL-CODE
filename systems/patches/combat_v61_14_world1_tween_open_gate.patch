@@ -1,0 +1,209 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -1600,25 +1600,83 @@
+-        local started =
+-            os.clock()
+-
+-        while os.clock()
+-            - started
+-            < CFG.OPEN_GATE_CROSS_TIMEOUT
+-        do
+-            if not Root
+-                or not Root.Parent
+-                or humanoid.Health <= 0
+-            then
+-                return true,
+-                    "CHARACTER_CHANGED"
+-            end
+-
+-            -- Real movement; no CFrame teleport for this recovery.
+-            pcall(
+-                humanoid.MoveTo,
+-                humanoid,
+-                destination
+-            )
+-
+-            task.wait(
+-                CFG.OPEN_GATE_REISSUE
+-            )
++        -- V61.14.2: World1 transition movement is tween/floating movement,
++        -- never Roblox Humanoid walking. An already-open gate must cross the
++        -- same useful depth as the proven normal gate path. The old 14-stud
++        -- recovery intermittently left Round5->6 stranded before the final
++        -- transition/checkpoint trigger.
++        local Motion = nil
++
++        if type(getgenv().IronSoulLoadRaw)
++            == "function"
++        then
++            local okMotion,
++                value =
++                    getgenv().IronSoulLoadRaw(
++                        "systems/world1_motion.lua"
++                    )
++
++            if okMotion
++                and type(value)
++                    == "table"
++            then
++                Motion = value
++            end
++        end
++
++        local travelY =
++            Root.Position.Y
++
++        -- Match the normal gate-cross frontier: move smoothly through the
++        -- full doorway/checkpoint volume instead of stopping at 14 studs.
++        local fullCrossDestination =
++            doorPos
++            + outward * 41
++
++        local tweenDestination =
++            Vector3.new(
++                fullCrossDestination.X,
++                travelY,
++                fullCrossDestination.Z
++            )
++
++        if Motion
++            and type(Motion.MoveToPosition)
++                == "function"
++        then
++            Motion.MoveToPosition(
++                Root,
++                tweenDestination,
++                Vector3.new(
++                    doorPos.X,
++                    travelY,
++                    doorPos.Z
++                ),
++                {
++                    Speed = 210,
++                    MaxTime = 0.45,
++                }
++            )
++        else
++            -- Fail closed to exact CFrame movement, never Humanoid:MoveTo.
++            Root.CFrame =
++                CFrame.lookAt(
++                    tweenDestination,
++                    Vector3.new(
++                        doorPos.X,
++                        travelY,
++                        doorPos.Z
++                    )
++                )
++        end
++
++        if getgenv().IronSoulTelemetry then
++            getgenv().IronSoulTelemetry:
++                Event(
++                    "OPEN_GATE_TWEEN_FULL_CROSS",
++                    "round="
++                        .. tostring(row.RoundNum)
++                        .. " distance=41"
++                )
++        end
++
++        local started =
++            os.clock()
++
++        while os.clock()
++            - started
++            < CFG.DOOR_NEW_REGION_WAIT
++        do
++            if not Root
++                or not Root.Parent
++                or humanoid.Health <= 0
++            then
++                return true,
++                    "CHARACTER_CHANGED"
++            end
++
++            task.wait(0.05)
+@@ -1703,31 +1761,7 @@
+-            -- Crossing the doorway plane is enough to leave GATE and
+-            -- re-evaluate from the far side.
+-            local beyond =
+-                Vector3.new(
+-                    Root.Position.X
+-                        - doorPos.X,
+-                    0,
+-                    Root.Position.Z
+-                        - doorPos.Z
+-                ):
+-                    Dot(outward)
+-
+-            if beyond
+-                >= CFG.OPEN_GATE_CROSS_SUCCESS
+-            then
+-                if getgenv().IronSoulTelemetry then
+-                    getgenv().IronSoulTelemetry:
+-                        Event(
+-                            "OPEN_GATE_CROSS_SUCCESS",
+-                            "CROSSED_PLANE beyond="
+-                                .. string.format(
+-                                    "%.1f",
+-                                    beyond
+-                                )
+-                                .. " pos="
+-                                .. tostring(
+-                                    Root.Position
+-                                )
+-                        )
+-                end
+-
+-                return true,
+-                    "OPEN_GATE_CROSSED"
+-            end
++            -- V61.14.2: geometric plane crossing is NOT progression proof.
++            -- Stay in GATE until settlement / GameRound / NEW_REGION evidence.
+         end
+@@ -1790,6 +1824,32 @@
+         if getgenv().IronSoulTelemetry then
+             getgenv().IronSoulTelemetry:
+                 Event(
+                     "OPEN_GATE_CROSS_STALL",
+                     "moved="
+                         .. string.format(
+                             "%.1f",
+                             moved
+                         )
+                         .. " final="
+                         .. tostring(
+                             Root.Position
+                         )
+                 )
+         end
++
++        -- V61.15 live route frontier:
++        -- If GameRound already advanced but its wake/objective has not streamed,
++        -- do not repeat the same 41-stud doorway cross forever. Let the external
++        -- place-aware mapper probe farther beyond this exact current-1 gate and
++        -- wait for authoritative current-round evidence. No new combat locals.
++        if getgenv().IronSoulDungeonRouteMapper
++            and getgenv().IronSoulDungeonRouteMapper:
++                AdvanceFromOpenGate(
++                    doorRoot,
++                    doorPos,
++                    outward,
++                    oldRegion,
++                    beforeRound
++                )
++        then
++            if getgenv().IronSoulTelemetry then
++                getgenv().IronSoulTelemetry:
++                    Event(
++                        "OPEN_GATE_ROUTE_MAPPER_SUCCESS",
++                        "round=" .. tostring(row.RoundNum)
++                    )
++            end
++
++            return true,
++                "ROUTE_MAPPER_ADVANCE"
++        end
+ 
+         return false,
+             "OPEN_GATE_CROSS_STALLED"
+     end

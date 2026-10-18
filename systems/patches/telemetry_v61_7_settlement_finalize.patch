@@ -1,0 +1,46 @@
+--- a/systems/telemetry.lua
++++ b/systems/telemetry.lua
+@@ -215,6 +215,9 @@
+         LastEvent = "START",
+     }
+ 
++    local SettlementArchived =
++        false
++
+     local function writeMatchSummary(
+         label
+     )
+@@ -1209,6 +1212,23 @@
+             )
+         end
+ 
++        -- Settlement is an authoritative state even if combat exits without
++        -- emitting an explicit SETTLEMENT telemetry event. Archive the match
++        -- exactly once so successful runs never remain mislabeled RUNNING.
++        if settled == true
++            and not SettlementArchived
++        then
++            SettlementArchived =
++                true
++
++            MatchStats.LastEvent =
++                "SETTLEMENT_DETECTED"
++
++            writeMatchSummary(
++                "SETTLEMENT"
++            )
++        end
++
+         return table.concat(
+             lines,
+             "\n"
+@@ -1295,6 +1315,9 @@
+             Snapshot(name)
+ 
+         if name == "SETTLEMENT" then
++            SettlementArchived =
++                true
++
+             writeMatchSummary(
+                 "SETTLEMENT"
+             )

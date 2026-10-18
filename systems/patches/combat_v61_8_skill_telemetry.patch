@@ -1,0 +1,252 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -2260,6 +2260,18 @@
+             ~= nil
+     end
+ 
++    if action == "SkillU" then
++        return n == "skillu"
++            or string.find(
++                n,
++                "skillu",
++                1,
++                true
++            )
++            ~= nil
++            or string.find(n, "ultimate", 1, true)
++                ~= nil
++    end
++
+     return false
+ end
+ 
+@@ -2287,6 +2299,7 @@
+             for _, action in ipairs({
+                 "Skill1",
+                 "Skill2",
++                "SkillU",
+             }) do
+                 if not Callbacks[action]
+                     and actionNameMatches(
+@@ -2352,12 +2365,17 @@
+             )
+             .. " Skill2="
+             .. tostring(
+                 Callbacks.Skill2 ~= nil
++            )
++            .. " SkillU="
++            .. tostring(
++                Callbacks.SkillU ~= nil
+             )
+     )
+ end
+ 
+ discoverCallbacks()
+ 
+ local localLastCast = {
+     Skill1 = -math.huge,
+     Skill2 = -math.huge,
++    SkillU = -math.huge,
+ }
+ 
+ local fallbackCD = {
+     Skill1 = 10,
+     Skill2 = 12,
++    -- Ultimate is charge-gated by the game's native callback. This fallback
++    -- only prevents callback spam when no replicated LastTs is present.
++    SkillU = 5,
+ }
+@@ -2463,6 +2481,23 @@
+             "CAST "
+                 .. action
+         )
++
++        -- Low-volume proof that native skills are really being used.
++        -- This is important for boss DPS tuning without enabling heavy debug logs.
++        local telemetry =
++            getgenv().IronSoulTelemetry
++
++        if telemetry
++            and type(telemetry.Event)
++                == "function"
++        then
++            pcall(
++                telemetry.Event,
++                telemetry,
++                "SKILL_CAST",
++                tostring(action)
++            )
++        end
+ 
+         return true
+     end
+@@ -2494,6 +2529,7 @@
+ local AttackDriver = {
+     ComboStep = 1,
+     LastObservedHP = nil,
+     LastDamageAt = os.clock(),
++    CalibrationAttempts = 0,
+ }
+ 
+ local function sendHeadlessAttack()
+@@ -2530,6 +2566,15 @@
+         return
+     end
+ 
++    -- V61.22: a newly equipped skill can still be inside its short native
++    -- action window when the first BaseAttack calibration begins. Testing
++    -- during that window can make a valid BaseAttack remote look broken.
++    if SkillCastingUntil
++        and SkillCastingUntil > os.clock()
++    then
++        task.wait(
++            math.min(0.60, SkillCastingUntil - os.clock() + 0.10)
++        )
++    end
++
+     moveNear(enemy)
+     face(enemy)
+ 
+@@ -2538,10 +2583,25 @@
+         "Testing exact direct BaseAttack RF path..."
+     )
+ 
++    AttackDriver.ComboStep = 1
++
+     local ok =
+-        pcall(
+-            sendHeadlessAttack
+-        )
++        pcall(function()
++            -- Validate with the same clean four-stage direct combo already
++            -- used by the proven headless recovery path. One isolated packet
++            -- is too easy to lose to a transient action lock.
++            for step = 1, 4 do
++                if not enemyAlive(enemy) then
++                    break
++                end
++
++                AttackDriver.ComboStep = step
++                sendHeadlessAttack()
++                task.wait(0.055)
++            end
++        end)
++
++    AttackDriver.ComboStep = 1
+ 
+     if ok then
+         local damaged =
+@@ -2559,6 +2619,8 @@
+                 end,
+-                1,
++                1.25,
+                 0.02
+             )
+ 
+         if damaged then
+             AttackDriverMode =
+                 "HEADLESS_REMOTE"
++
++            AttackDriver.CalibrationAttempts = 0
+ 
+             AttackDriver.LastObservedHP =
+                 enemyHealth(enemy)
+@@ -2571,13 +2633,35 @@
+             log(
+                 "AttackDriver=HEADLESS_REMOTE VERIFIED"
+             )
++
++            if getgenv().IronSoulTelemetry then
++                getgenv().IronSoulTelemetry:
++                    Event(
++                        "BASIC_DRIVER",
++                        "VERIFIED"
++                    )
++            end
+ 
+             return
+         end
+     end
+ 
++    AttackDriver.CalibrationAttempts =
++        (AttackDriver.CalibrationAttempts or 0) + 1
++
++    -- Do NOT permanently turn basics off because one HP sample did not move.
++    -- The exact BaseAttack remote is historically server-validated. Keep it
++    -- alive and let the sustained no-damage watchdog/headlessRecovery retry a
++    -- clean combo. Mouse1 remains disabled.
+     AttackDriverMode =
+-        "HEADLESS_FAILED"
++        "HEADLESS_REMOTE"
++
++    AttackDriver.LastObservedHP =
++        enemyHealth(enemy)
++
++    AttackDriver.LastDamageAt =
++        os.clock()
+ 
+     log(
+-        "AttackDriver=HEADLESS_FAILED; "
+-            .. "Mouse1 fallback is intentionally disabled."
++        "AttackDriver=HEADLESS_REMOTE UNVERIFIED_RETRY attempt="
++            .. tostring(AttackDriver.CalibrationAttempts)
++            .. " (NO Mouse1)"
+     )
++
++    if getgenv().IronSoulTelemetry then
++        getgenv().IronSoulTelemetry:
++            Event(
++                "BASIC_DRIVER",
++                "UNVERIFIED_RETRY attempt="
++                    .. tostring(AttackDriver.CalibrationAttempts)
++            )
++    end
+ end
+@@ -5378,13 +5462,39 @@
+             trackElevationDamage(
+                 enemy
+             )
+         end
+ 
+-        if Callbacks.Skill2
++        -- V61.22: the first clean BaseAttack verification MUST happen before
++        -- any skill can put the weapon into an action window. This fixes the
++        -- V61.21 skills-only regression where one contaminated calibration
++        -- permanently set HEADLESS_FAILED.
++        if AttackDriverMode == "UNTESTED" then
++            basicAttack(enemy)
++            lastBasic =
++                os.clock()
++
++        -- SkillU is charge-gated. V61.31 additionally reserves it for a true
++        -- account-relative threat instead of every 1500+ HP medium mob.
++        elseif Callbacks.SkillU
++            and enemyHealth(enemy)
++            and enemyHealth(enemy)
++                >= math.max(
++                    tonumber(CFG.ADAPTIVE_BOSS_HP)
++                        or 1500,
++                    (
++                        Humanoid
++                        and tonumber(Humanoid.MaxHealth)
++                        or 0
++                    )
++                        * (
++                            tonumber(
++                                CFG.ADAPTIVE_THREAT_PLAYER_HP_MULTIPLIER
++                            )
++                            or 3.0
++                        )
++                )
++            and skillReady("SkillU")
++        then
++            if castSkill("SkillU") then
++                task.wait(0.18)
++            end
++
++        elseif Callbacks.Skill2
+             and skillReady("Skill2")
+         then
+             if castSkill("Skill2") then
+                 task.wait(0.16)
+             end

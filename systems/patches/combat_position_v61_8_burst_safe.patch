@@ -1,0 +1,46 @@
+--- a/systems/combat_position.lua
++++ b/systems/combat_position.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - BOSS-SAFE CONTINUOUS COMBAT POSITION V61.7
++-- IRON SOUL - BOSS-BURST-SAFE CONTINUOUS COMBAT POSITION V61.8
+ --
+ -- Attack rotation never pauses because of these profiles.
+ --
+@@ -473,12 +473,36 @@
+             now
+             - S.LastTargetDamageAt
+ 
++        if noTargetDamageAge
++                >= D.CFG.ADAPTIVE_NO_TARGET_DAMAGE
++            and now < S.HitBurstUntil
++            and S.Mode ~= "HIT_RECOVERY"
++        then
++            emit(
++                "TARGET_RECOVERY_DEFERRED",
++                "age="
++                    .. string.format(
++                        "%.2f",
++                        noTargetDamageAge
++                    )
++                    .. " burstRemaining="
++                    .. string.format(
++                        "%.2f",
++                        S.HitBurstUntil - now
++                    )
++            )
++        end
++
+         -- Preserve damage reliability above avoidance. If attacks stop
+         -- registering, move to the already-validated close profile.
+         if noTargetDamageAge
+                 >= D.CFG.ADAPTIVE_NO_TARGET_DAMAGE
+             and S.Mode
+                 ~= "HIT_RECOVERY"
++            -- Never dive back to 5.5 studs while the boss's current damage
++            -- burst is still active. V61.7 could otherwise undo EVADE in the
++            -- same update cycle when target damage had also stalled.
++            and now >= S.HitBurstUntil
+         then
+             S.RecoveryDamageAt =
+                 nil

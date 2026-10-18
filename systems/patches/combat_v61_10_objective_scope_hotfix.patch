@@ -1,0 +1,73 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -313,8 +313,17 @@
+ local function important(s)
+     print(
+         "[IronSoul]",
+         tostring(s)
+     )
++
++    local status =
++        getgenv().IronSoulStatus
++
++    if type(status) == "function" then
++        pcall(
++            status,
++            "Dungeon | " .. tostring(s)
++        )
++    end
+ end
+ 
+ local function log(s)
+@@ -4017,14 +4026,31 @@
+                         castSkill = castSkill,
+ 
+                         hasNormalObjective = function()
+-                            return #liveEnemies() > 0
+-                                or currentDragonEgg() ~= nil
++                            -- This resolver is constructed before the local
++                            -- currentDragonEgg() declaration later in the
++                            -- file. Do not close over that not-yet-visible
++                            -- local; inspect the replicated objective directly.
++                            local egg =
++                                workspace:FindFirstChild(
++                                    "DragonEgg"
++                                )
++
++                            local eggAlive =
++                                egg ~= nil
++                                and egg.Parent ~= nil
++                                and egg:GetAttribute(
++                                    "Broken"
++                                ) ~= true
++
++                            return #liveEnemies() > 0
++                                or eggAlive
+                         end,
+ 
+                         event = function(name, detail)
+                             local telemetry =
+                                 getgenv().IronSoulTelemetry
+ 
+                             if telemetry then
+                                 telemetry:Event(name, detail)
+                             end
+ 
+-                            getgenv().IronSoulNavTrace(
+-                                tostring(name)
+-                                    .. " "
+-                                    .. tostring(detail or "")
+-                            )
++                            local navTrace =
++                                getgenv().IronSoulNavTrace
++
++                            if type(navTrace) == "function" then
++                                navTrace(
++                                    tostring(name)
++                                        .. " "
++                                        .. tostring(detail or "")
++                                )
++                            end
+                         end,
+                     }
+                 )

@@ -1,0 +1,353 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -2889,8 +2889,23 @@
+                     - Root.Position
+                 ).Magnitude
+ 
++            -- V61.14 empty-traversal rule:
++            -- while COMBAT has no local/nearby objective, an exact current-1
++            -- traversal gate can legitimately be hundreds of studs ahead.
++            -- Allow ONLY that exact round, and keep a hard 650-stud bound.
++            local currentRound =
++                gameRound()
++
++            local allowFarEmptyTraversal =
++                CurrentState == "COMBAT"
++                and currentRound
++                and row.RoundNum
++                    == currentRound - 1
++                and playerDist <= 650
++
+             if regionDist
+-                <= CFG.DOOR_REGION_MAX_DISTANCE
++                    <= CFG.DOOR_REGION_MAX_DISTANCE
++                or allowFarEmptyTraversal
+             then
+                 row.RegionDistance =
+                     regionDist
+@@ -3378,17 +3393,12 @@
+     if not Root
+         or not Root.Parent
+     then
+         return "CHARACTER_CHANGED"
+     end
+ 
+-    if beforePos
+-        and (
+-            Root.Position
+-            - beforePos
+-        ).Magnitude > 100
+-    then
+-        return "PORTAL_MOVED"
+-    end
+-
+     local region,
+         dist =
+             nearestWakeRegion(
+                 Root.Position
+             )
+ 
+     if region
+         and oldRegion
+         and region ~= oldRegion
+         and dist <= 20
++        and tostring(region.Name)
++            == "Round"
++                .. tostring(gameRound())
+     then
+         return region
+     end
+ end
+@@ -3423,6 +3433,27 @@
+     while os.clock()
+         - started
+         < timeout
+     do
++        -- V61.14.5 authoritative cross-section recovery:
++        -- D3 proof showed the generic reused Portal can physically send the
++        -- character to Round7 while server GameRound is still 5. If the exact
++        -- server-current wake is already live/cached far ahead, float directly
++        -- to that current round instead of touching the ambiguous section portal.
++        if getgenv().IronSoulWorld1RoundRecovery
++            and getgenv().IronSoulWorld1RoundRecovery:
++                RecoverIfNeeded(
++                    oldRegion,
++                    "SECTION_PORTAL"
++                )
++        then
++            portalLog(
++                "CURRENT_ROUND_ROUTE success GameRound="
++                    .. tostring(gameRound())
++            )
++
++            return true,
++                "CURRENT_ROUND_TWEEN"
++        end
++
+         local evidence =
+             portalTeleportEvidence(
+                 beforePos,
+                 oldRegion
+             )
+@@ -3538,6 +3569,21 @@
+                         .. string.format(
+                             "%.2f",
+                             dist
+                         )
+                 )
+ 
++                -- V61.14.3 portal-arm settle:
++                -- do not race straight through a portal the same instant it
++                -- becomes eligible. The user observed that the fast tween can
++                -- otherwise end up just beyond the portal without triggering.
++                -- Wait only on the first handshake attempt; retries stay fast.
++                if attempts == 1 then
++                    portalLog(
++                        "PORTAL_ARM_SETTLE seconds=0.60"
++                    )
++
++                    task.wait(0.60)
++                end
++
+                 -- Enter the exact small RoundDoor.Portal volume.
+                 -- Unlike old versions, this is NOT a generic Workspace.Portal.
+                 for _, offset in ipairs({
+@@ -4089,15 +4135,90 @@
+     local y =
+         doorPos.Y
+ 
+-    placeCharacter(
++    local world1Motion =
++        getgenv().IronSoulWorld1Motion
++
++    local isWorld1 =
++        GameRoundCfg
++        and tostring(
++            GameRoundCfg:GetAttribute(
++                "WorldId"
++            )
++        ) == "World1"
++
++    local approachPos =
+         Vector3.new(
+             approach.X,
+             y,
+             approach.Z
+-        ),
+-        outward
+-    )
++        )
+ 
+-    task.wait(0.18)
++    if isWorld1
++        and world1Motion
++        and type(
++            world1Motion.MoveToPosition
++        ) == "function"
++    then
++        local approachDistance =
++            (
++                approachPos
++                - Root.Position
++            ).Magnitude
++
++        local speed =
++            approachDistance > 80
++            and (
++                tonumber(
++                    world1Motion.FAR_SPEED
++                )
++                or 260
++            )
++            or (
++                tonumber(
++                    world1Motion.DEFAULT_SPEED
++                )
++                or 210
++            )
++
++        world1Motion.MoveToPosition(
++            Root,
++            approachPos,
++            Vector3.new(
++                doorPos.X,
++                y,
++                doorPos.Z
++            ),
++            {
++                Speed = speed,
++                MaxTime =
++                    approachDistance > 80
++                    and 1.60
++                    or 0.45,
++            }
++        )
++
++        if getgenv().IronSoulTelemetry then
++            getgenv().IronSoulTelemetry:
++                Event(
++                    "DOOR_TWEEN_APPROACH",
++                    "round="
++                        .. tostring(
++                            row.RoundNum
++                        )
++                        .. " studs="
++                        .. string.format(
++                            "%.1f",
++                            approachDistance
++                        )
++                )
++        end
++    else
++        placeCharacter(
++            approachPos,
++            outward
++        )
++    end
++
++    task.wait(0.06)
+ 
+     local promptDist =
+         (
+@@ -4221,42 +4342,99 @@
+     UsedDoorRoots[
+         frozenRoot
+     ] = true
+ 
+     -- Once GATE state begins, DO NOT look at enemies until this completes.
+-    for _, distance in ipairs({
+-        2,
+-        5,
+-        9,
+-        14,
+-        20,
+-        27,
+-        34,
+-        41,
+-    }) do
+-        if settlementDetected() then
+-            return true,
+-                "SETTLEMENT"
+-        end
+-
+-        local p =
+-            doorPos
+-            + outward * distance
+-
+-        placeCharacter(
+-            Vector3.new(
+-                p.X,
+-                Root.Position.Y,
+-                p.Z
+-            ),
+-            outward
+-        )
+-
+-        portalLog(
+-            "DOOR_CROSS distance="
+-                .. tostring(distance)
+-                .. " PlayerPos="
+-                .. tostring(
+-                    Root.Position
+-                )
+-        )
+-
+-        task.wait(0.14)
++    -- World1 uses smooth floating CFrame tween segments, not Humanoid walking
++    -- and not visible hard-step CFrame hopping.
++    if isWorld1
++        and world1Motion
++        and type(
++            world1Motion.MoveToPosition
++        ) == "function"
++    then
++        for _, distance in ipairs({
++            9,
++            22,
++            41,
++        }) do
++            if settlementDetected() then
++                return true,
++                    "SETTLEMENT"
++            end
++
++            local p =
++                doorPos
++                + outward * distance
++
++            world1Motion.MoveToPosition(
++                Root,
++                Vector3.new(
++                    p.X,
++                    Root.Position.Y,
++                    p.Z
++                ),
++                Vector3.new(
++                    doorPos.X,
++                    Root.Position.Y,
++                    doorPos.Z
++                ),
++                {
++                    Speed =
++                        tonumber(
++                            world1Motion.DEFAULT_SPEED
++                        )
++                        or 210,
++                    MaxTime = 0.22,
++                }
++            )
++
++            portalLog(
++                "DOOR_CROSS_TWEEN distance="
++                    .. tostring(distance)
++                    .. " PlayerPos="
++                    .. tostring(
++                        Root.Position
++                    )
++            )
++
++            task.wait(0.025)
++        end
++    else
++        for _, distance in ipairs({
++            2,
++            5,
++            9,
++            14,
++            20,
++            27,
++            34,
++            41,
++        }) do
++            if settlementDetected() then
++                return true,
++                    "SETTLEMENT"
++            end
++
++            local p =
++                doorPos
++                + outward * distance
++
++            placeCharacter(
++                Vector3.new(
++                    p.X,
++                    Root.Position.Y,
++                    p.Z
++                ),
++                outward
++            )
++
++            portalLog(
++                "DOOR_CROSS distance="
++                    .. tostring(distance)
++                    .. " PlayerPos="
++                    .. tostring(
++                        Root.Position
++                    )
++            )
++
++            task.wait(0.14)
++        end
+     end
+ 
+     local oldRegion =

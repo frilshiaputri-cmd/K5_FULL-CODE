@@ -1,0 +1,89 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -4377,6 +4377,64 @@
+         task.wait(0.08)
+     end
+ 
++    -- V61.8 LEARNED-ROUTE FAST PATH:
++    -- After the normal fast evidence check fails, a route that the watchdog
++    -- has already proved in an earlier match is allowed to recover immediately.
++    -- Unseen transitions still fall through to the conservative V61.6 path.
++    local earlyWatchdog =
++        getgenv().IronSoulTransitionWatchdog
++
++    if earlyWatchdog
++        and type(
++            earlyWatchdog.HasLearnedRoute
++        ) == "function"
++    then
++        local learned,
++            learnedKey,
++            learnedKind,
++            learnedDistance =
++                earlyWatchdog:
++                    HasLearnedRoute()
++
++        if learned then
++            if getgenv().IronSoulTelemetry then
++                getgenv().IronSoulTelemetry:
++                    Event(
++                        "EARLY_LEARNED_WATCHDOG",
++                        "key="
++                            .. tostring(learnedKey)
++                            .. " kind="
++                            .. tostring(learnedKind)
++                            .. " sourceDist="
++                            .. string.format(
++                                "%.1f",
++                                learnedDistance
++                                    or -1
++                            )
++                    )
++            end
++
++            local recovered,
++                recoveryResult =
++                    earlyWatchdog:
++                        Recover(
++                            oldRegion,
++                            "POST_DOOR_LEARNED"
++                        )
++
++            if recovered then
++                return true,
++                    recoveryResult
++            elseif getgenv().IronSoulTelemetry then
++                getgenv().IronSoulTelemetry:
++                    Event(
++                        "EARLY_LEARNED_WATCHDOG_FAIL",
++                        tostring(recoveryResult)
++                    )
++            end
++        end
++    end
++
+     -- V61.1:
+     -- Before waiting on portal objects, reproduce the tiny REAL movement
+     -- that manually wakes some server-side transition/checkpoint triggers.
+@@ -9245,6 +9303,20 @@
+ --========================================================--
+ -- FINAL CHECKPOINT
+ --========================================================--
+ 
++-- Finalize the permanent match archive before replay/lobby teleport can
++-- tear this server down. Settlement detection is authoritative here.
++if stopReason == "SETTLEMENT_REACHED"
++    and getgenv().IronSoulTelemetry
++then
++    pcall(function()
++        getgenv().IronSoulTelemetry:
++            Event(
++                "SETTLEMENT",
++                "FINAL_CHECKPOINT"
++            )
++    end)
++end
++
+ log(
+     "FINAL stopReason="
+         .. tostring(stopReason)

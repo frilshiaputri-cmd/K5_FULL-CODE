@@ -1,0 +1,334 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - BOSS-BURST-SAFE 24x7 COMBAT V61.8
++-- IRON SOUL - UNKNOWN-OBJECTIVE RECOVERY COMBAT V61.9
+ --
+ -- MAJOR CHANGE:
+ -- Portal/gate progression now uses the GAME'S EXACT route recovered
+@@ -3960,6 +3960,82 @@
+     end
+ end
+ 
++--========================================================--
++-- V61.9 UNKNOWN OBJECTIVE RESOLVER
++--
++-- New worlds can put a destroyable wall/gate/barrier between ordinary
++-- RoundDoor phases. The normal enemy list intentionally does not include
++-- those objects. Load a bounded evidence-driven resolver that can discover
++-- them without hardcoding a world, round, object path, or coordinate.
++--========================================================--
++
++getgenv().IronSoulObjectiveResolver =
++    nil
++
++do
++    local loadRaw =
++        getgenv().IronSoulLoadRaw
++
++    if type(loadRaw) == "function" then
++        local ok, factory =
++            loadRaw(
++                "systems/objective_probe.lua"
++            )
++
++        if ok
++            and type(factory) == "function"
++        then
++            local builtOk, built =
++                pcall(
++                    factory,
++                    {
++                        LocalPlayer = LocalPlayer,
++
++                        getRoot = function()
++                            return Root
++                        end,
++
++                        getCurrentRegion = function()
++                            return CurrentCombatRegion
++                        end,
++
++                        gameRound = gameRound,
++                        settlementDetected = settlementDetected,
++                        fullName = fullName,
++                        sendHeadlessAttack = sendHeadlessAttack,
++                        skillReady = skillReady,
++                        castSkill = castSkill,
++
++                        hasNormalObjective = function()
++                            return #liveEnemies() > 0
++                                or currentDragonEgg() ~= nil
++                        end,
++
++                        event = function(name, detail)
++                            local telemetry =
++                                getgenv().IronSoulTelemetry
++
++                            if telemetry then
++                                telemetry:Event(name, detail)
++                            end
++
++                            getgenv().IronSoulNavTrace(
++                                tostring(name)
++                                    .. " "
++                                    .. tostring(detail or "")
++                            )
++                        end,
++                    }
++                )
++
++            if builtOk
++                and type(built) == "table"
++            then
++                getgenv().IronSoulObjectiveResolver =
++                    built
++            else
++                important(
++                    "Objective resolver init failed"
++                )
++            end
++        else
++            important(
++                "Objective resolver load failed"
++            )
++        end
++    end
++end
++
+ local function writePhaseAudit(
+     route,
+     completed,
+@@ -6157,6 +6233,47 @@
+                             end
+                         end
+ 
++                        -- V61.9: before assuming an empty section is only a
++                        -- portal/corridor, inspect it for a damageable barrier.
++                        local objectiveResolver =
++                            getgenv().IronSoulObjectiveResolver
++
++                        if objectiveResolver
++                            and type(
++                                objectiveResolver.TryResolve
++                            ) == "function"
++                        then
++                            local objectiveOk,
++                                objectiveResult =
++                                    objectiveResolver:
++                                        TryResolve(
++                                            "EMPTY_COMBAT",
++                                            emptyAge
++                                        )
++
++                            if objectiveOk then
++                                portalsInvoked += 1
++
++                                writePhaseAudit(
++                                    "UNKNOWN_OBJECTIVE_EMPTY",
++                                    completedRound,
++                                    objectiveResult
++                                )
++
++                                lockRegion(
++                                    "AFTER_UNKNOWN_OBJECTIVE_EMPTY"
++                                )
++
++                                CurrentCombatRound = gameRound()
++                                lastRound = gameRound() or lastRound
++                                noLocalEnemySince = nil
++                                getgenv().IronSoulStagingState.NoEnemySince = nil
++                                getgenv().IronSoulEmptyTraversalState.Since = nil
++
++                                task.wait(0.22)
++                                continue
++
++                            elseif objectiveResult == "DAMAGE_PROGRESS" then
++                                task.wait(0.08)
++                                continue
++                            end
++                        end
++
+                         -- V61.5 24/7 recovery.
+                         --
+                         -- Run even when the player is still close to the old
+@@ -6866,6 +6983,127 @@
+                     nearestSpatialEnemy(
+                         CFG.GATE_ENEMY_RECOVERY_RADIUS
+                     )
++
++            -- V61.32 WORLD2 FAR-WAVE HARD STALL BOUND.
++            --
++            -- One hour soak found one Normal Penitent run that reached:
++            --   GameRound=5 / completedRound=4 / local=0 / global=19
++            --   nearest real enemy ~1049 studs away
++            -- and then remained in GATE for ~895 seconds with no watchdog
++            -- recovery. Do NOT guess a 1000-stud World2 route here. If this
++            -- exact bad signature persists for 45 seconds, end the run through
++            -- the already-proven timeout/failure -> Lobby path so 24/7 farming
++            -- loses under a minute instead of ~15 minutes.
++            --
++            -- Scratch state uses getgenv() deliberately: no new top-level
++            -- locals are added to the already register-heavy combat chunk.
++            getgenv().IronSoulW2FarWaveStall =
++                getgenv().IronSoulW2FarWaveStall
++                or {
++                    Since = nil,
++                    Round = nil,
++                    Enemy = nil,
++                    Distance = nil,
++                }
++
++            if tostring(
++                    ReplicatedStorage:
++                        FindFirstChild("GameRoundCfg")
++                        and ReplicatedStorage.GameRoundCfg:
++                            GetAttribute("WorldId")
++                    or ""
++                ) == "World2"
++                and not gateEnemy
++            then
++                getgenv().IronSoulW2FarWaveStall.Enemy,
++                    getgenv().IronSoulW2FarWaveStall.Distance =
++                        nearestSpatialEnemy(math.huge)
++
++                if getgenv().IronSoulW2FarWaveStall.Enemy
++                    and tonumber(
++                        getgenv().IronSoulW2FarWaveStall.Distance
++                    )
++                    and tonumber(
++                        getgenv().IronSoulW2FarWaveStall.Distance
++                    ) >= 700
++                then
++                    if getgenv().IronSoulW2FarWaveStall.Round
++                            ~= gameRound()
++                        or not getgenv().IronSoulW2FarWaveStall.Since
++                    then
++                        getgenv().IronSoulW2FarWaveStall.Round =
++                            gameRound()
++
++                        getgenv().IronSoulW2FarWaveStall.Since =
++                            os.clock()
++
++                        if getgenv().IronSoulTelemetry then
++                            getgenv().IronSoulTelemetry:
++                                Event(
++                                    "WORLD2_FAR_WAVE_STALL_ARM",
++                                    "round="
++                                        .. tostring(gameRound())
++                                        .. " dist="
++                                        .. string.format(
++                                            "%.1f",
++                                            getgenv().IronSoulW2FarWaveStall.Distance
++                                        )
++                                )
++                        end
++
++                    elseif os.clock()
++                            - getgenv().IronSoulW2FarWaveStall.Since
++                            >= 45
++                    then
++                        if getgenv().IronSoulTelemetry then
++                            getgenv().IronSoulTelemetry:
++                                Event(
++                                    "WORLD2_FAR_WAVE_STALL_ABORT",
++                                    "round="
++                                        .. tostring(gameRound())
++                                        .. " dist="
++                                        .. string.format(
++                                            "%.1f",
++                                            getgenv().IronSoulW2FarWaveStall.Distance
++                                        )
++                                        .. " age="
++                                        .. string.format(
++                                            "%.1f",
++                                            os.clock()
++                                                - getgenv().IronSoulW2FarWaveStall.Since
++                                        )
++                                )
++                        end
++
++                        -- Reuse existing post-combat failed/timed-out handling.
++                        -- No route, prop, portal, or progression state is faked.
++                        stopReason = "GLOBAL_TIMEOUT"
++                        continue
++                    end
++                else
++                    getgenv().IronSoulW2FarWaveStall.Since = nil
++                    getgenv().IronSoulW2FarWaveStall.Round = nil
++                end
++            else
++                getgenv().IronSoulW2FarWaveStall.Since = nil
++                getgenv().IronSoulW2FarWaveStall.Round = nil
++            end
++
++            -- V61.9 HARD EMPTY-GATE RECOVERY.
++            --
++            -- This runs independently of old RoundDoor recognition. A new
++            -- map can have no RoundDoor row at all because its progression
++            -- object is a breakable gate/wall. The resolver first records the
++            -- nearby objects, attacks only evidence-backed candidates, then
++            -- allows the existing watchdog to handle portal/touch mechanics.
++            if not gateEnemy
++                and getgenv().IronSoulAdaptiveGateState.EnteredAt
++            then
++                local gateObjectiveAge =
++                    os.clock()
++                    - getgenv().IronSoulAdaptiveGateState.EnteredAt
++
++                if gateObjectiveAge >= 2.50 then
++                    local objectiveResolver =
++                        getgenv().IronSoulObjectiveResolver
++
++                    if objectiveResolver
++                        and type(
++                            objectiveResolver.TryResolve
++                        ) == "function"
++                    then
++                        local objectiveOk,
++                            objectiveResult =
++                                objectiveResolver:
++                                    TryResolve(
++                                        "EMPTY_GATE",
++                                        gateObjectiveAge
++                                    )
++
++                        if objectiveOk then
++                            portalsInvoked += 1
++
++                            writePhaseAudit(
++                                "UNKNOWN_OBJECTIVE_GATE",
++                                completedRound,
++                                objectiveResult
++                            )
++
++                            state = "COMBAT"
++                            CurrentState = state
++                            completedRound = nil
++                            pendingGateRound = nil
++                            noLocalEnemySince = nil
++                            getgenv().IronSoulAdaptiveGateState.EnteredAt = nil
++
++                            lockRegion(
++                                "AFTER_UNKNOWN_OBJECTIVE_GATE"
++                            )
++
++                            CurrentCombatRound = gameRound()
++                            lastRound = gameRound() or lastRound
++
++                            task.wait(0.22)
++                            continue
++
++                        elseif objectiveResult == "DAMAGE_PROGRESS" then
++                            -- Stay in GATE and keep destroying the same
++                            -- confirmed barrier instead of wandering away.
++                            task.wait(0.08)
++                            continue
++                        end
++                    end
++                end
++            end
+ 
+             if gateEnemy then
+                 local openExpected,

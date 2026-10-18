@@ -1,0 +1,145 @@
+--- a/systems/lobby.lua
++++ b/systems/lobby.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - RESERVED-BEST-ORE FORGE + PROGRESSION LOBBY V61.7
++-- IRON SOUL - MEASURED RESERVED-BEST-ORE FORGE + PROGRESSION LOBBY V61.8
+ --
+ -- RUN IN LOBBY.
+ --
+@@ -3800,7 +3800,7 @@
+ inventoryCleanup()
+ 
+ local SMART_FORGE_STATUS_FILE =
+-    "IronSoul_LastSmartForge_V61_7.txt"
++    "IronSoul_LastSmartForge_V61_8.txt"
+ 
+ local function writeSmartForgeStatus(lines)
+     if type(writefile)
+@@ -4060,6 +4060,9 @@
+         if used < 3 then
+             break
+         end
++
++        local craftPowerBefore =
++            power()
+ 
+         local ok,
+             result =
+@@ -4117,6 +4120,24 @@
+         -- be cleaned by the existing protected inventory logic.
+         equipmentPass()
+ 
++        local craftPowerAfter =
++            power()
++
++        local latestResult =
++            results[#results]
++
++        if latestResult then
++            latestResult.PowerBefore =
++                craftPowerBefore
++
++            latestResult.PowerAfter =
++                craftPowerAfter
++
++            latestResult.PowerGain =
++                num(craftPowerAfter)
++                - num(craftPowerBefore)
++        end
++
+         total,
+             max =
+                 oreTotalAndMax()
+@@ -4139,8 +4160,8 @@
+         inventoryCount()
+ 
+     local lines = {
+-        "Version=V61.7",
+-        "Mode=RESERVE_BEST_ORE",
++        "Version=V61.8",
++        "Mode=MEASURED_RESERVE_BEST_ORE",
+         "Trigger="
+             .. tostring(trigger),
+         "OreBefore="
+@@ -4228,6 +4249,18 @@
+                 .. tostring(
+                     row.Factor
+                 )
++                .. "|PowerBefore="
++                .. tostring(
++                    row.PowerBefore
++                )
++                .. "|PowerAfter="
++                .. tostring(
++                    row.PowerAfter
++                )
++                .. "|PowerGain="
++                .. tostring(
++                    row.PowerGain
++                )
+         )
+     end
+ 
+@@ -4241,7 +4274,7 @@
+     then
+         pcall(
+             writefile,
+-            "IronSoul_ForgeHistory_V61_7_"
++            "IronSoul_ForgeHistory_V61_8_"
+                 .. tostring(
+                     os.time()
+                 )
+@@ -4308,6 +4341,47 @@
+     return
+ end
+ 
++-- V61.23 POST-FORGE UPGRADE PREFLIGHT.
++--
++-- Forge/EquipBest has already settled and the bag gate above is clear. This is
++-- therefore the correct point to spend only guaranteed Fortify upgrades, write
++-- the exact remaining material blocker, then decide whether one paid Cave run
++-- is worth doing. If any helper fails, fall through to the proven Story planner.
++do
++    local loadRaw =
++        getgenv().IronSoulLoadRaw
++
++    if type(loadRaw)
++        == "function"
++    then
++        local okUpgrade,
++            upgrade =
++                loadRaw(
++                    "systems/upgrade_preflight.lua"
++                )
++
++        if okUpgrade
++            and type(upgrade)
++                == "table"
++            and type(upgrade.Run)
++                == "function"
++        then
++            local okRun,
++                handled,
++                detail =
++                    pcall(
++                        upgrade.Run
++                    )
++
++            if okRun
++                and handled == true
++            then
++                important(
++                    "Upgrade planner | Cave handled | "
++                        .. tostring(detail)
++                )
++
++                return true
++            end
++        end
++    end
++end
++
+ --========================================================--
+ -- STORY PLANNER
+ --========================================================--

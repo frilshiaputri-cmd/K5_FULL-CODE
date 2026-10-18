@@ -1,0 +1,30 @@
+--- a/systems/transition_watchdog.lua
++++ b/systems/transition_watchdog.lua
+@@ -277,6 +277,27 @@
+         targetPos,
+         result
+     )
++        -- Route learning must never be allowed to kill the combat thread.
++        -- If a future transition returns incomplete coordinates, skip the
++        -- learning record and keep farming.
++        if typeof(sourcePos) ~= "Vector3"
++            or typeof(targetPos) ~= "Vector3"
++        then
++            emit(
++                "WATCHDOG_LEARN_SKIP",
++                "kind="
++                    .. tostring(kind)
++                    .. " source="
++                    .. tostring(sourcePos)
++                    .. " target="
++                    .. tostring(targetPos)
++                    .. " result="
++                    .. tostring(result)
++            )
++
++            return
++        end
++
+         local key =
+             routeKey(round)
+ 

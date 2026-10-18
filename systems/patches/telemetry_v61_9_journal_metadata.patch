@@ -1,0 +1,63 @@
+--- a/systems/telemetry.lua
++++ b/systems/telemetry.lua
+@@ -61,13 +61,55 @@
+     local InitialTeleportData =
+         initialTeleportData()
+ 
++    local function journalHint(key)
++        if type(readfile) ~= "function" then
++            return nil
++        end
++
++        if type(isfile) == "function"
++            and not isfile(
++                "IronSoul_Kaitun_Journal_V59.txt"
++            )
++        then
++            return nil
++        end
++
++        local ok, text =
++            pcall(
++                readfile,
++                "IronSoul_Kaitun_Journal_V59.txt"
++            )
++
++        if not ok
++            or type(text) ~= "string"
++        then
++            return nil
++        end
++
++        for line in string.gmatch(
++            text,
++            "[^\r\n]+"
++        ) do
++            local k, v =
++                string.match(
++                    line,
++                    "^([^=]+)=(.*)$"
++                )
++
++            if k == key then
++                return v
++            end
++        end
++
++        return nil
++    end
++
+     local InitialDiff =
+         InitialTeleportData.DiffLevel
+         or InitialTeleportData.Diff
++        or journalHint("Diff")
+         or "?"
+ 
+     local InitialWorld =
+         InitialTeleportData.WorldId
+         or InitialTeleportData.World
++        or journalHint("World")
++        or workspace:GetAttribute("WorldName")
+         or "?"
+ 
+     local JobShort =

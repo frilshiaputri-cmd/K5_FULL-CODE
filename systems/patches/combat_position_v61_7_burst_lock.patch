@@ -1,0 +1,108 @@
+--- a/systems/combat_position.lua
++++ b/systems/combat_position.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - CONTINUOUS DODGE COMBAT POSITION V61.4
++-- IRON SOUL - BOSS-SAFE CONTINUOUS COMBAT POSITION V61.7
+ --
+ -- Attack rotation never pauses because of these profiles.
+ --
+@@ -43,6 +43,12 @@
+         LastPlayerHitAt =
+             -math.huge,
+ 
++        -- Keep one escape direction through a whole enemy attack burst.
++        -- V61.4 flipped side on every repeated hit, which can oscillate back
++        -- through the same lingering hitbox.
++        HitBurstUntil =
++            -math.huge,
++
+         LastTargetHP = nil,
+         LastTargetDamageAt =
+             os.clock(),
+@@ -230,14 +236,35 @@
+         S.LastPlayerHitAt =
+             -math.huge
+ 
++        S.HitBurstUntil =
++            -math.huge
++
+         S.LastHumanoidState =
+             humanoidState
+ 
++        -- V61.31: boss-like is relative to the account. Latest W2 telemetry
++        -- showed 1.6k-4k enemies were being treated as bosses despite causing
++        -- zero incoming hits, while the 9k-68k targets caused the damage.
+         S.BossLike =
+             tonumber(targetHP)
+                 and tonumber(targetHP)
+-                    >= D.CFG.ADAPTIVE_BOSS_HP
++                    >= math.max(
++                        tonumber(
++                            D.CFG.ADAPTIVE_BOSS_HP
++                        )
++                            or 1500,
++                        (
++                            tonumber(playerMaxHP)
++                            or 0
++                        )
++                            * (
++                                tonumber(
++                                    D.CFG.ADAPTIVE_THREAT_PLAYER_HP_MULTIPLIER
++                                )
++                                or 3.0
++                            )
++                    )
+             or false
+ 
+         S.IncomingHits = 0
+         S.Side = 1
+@@ -327,8 +354,27 @@
+                     - S.LastPlayerHitAt
+                 <= D.CFG.ADAPTIVE_REPEAT_HIT_WINDOW
+ 
++            local sameBurst =
++                now < S.HitBurstUntil
++
+             S.IncomingHits += 1
+-            S.Side = -S.Side
++
++            -- Pick one escape side at the start of a burst and KEEP it.
++            -- Reversing on every damage tick was observed to cause
++            -- left-right oscillation while the boss hitbox was still active.
++            if not sameBurst then
++                S.Side = -S.Side
++            end
++
++            S.HitBurstUntil =
++                now
++                + (
++                    tonumber(
++                        D.CFG.ADAPTIVE_HIT_BURST_HOLD
++                    )
++                    or 1.15
++                )
++
+             S.LastPlayerHitAt =
+                 now
+ 
+@@ -354,6 +400,10 @@
+                     .. tostring(
+                         repeated
+                     )
++                    .. " sameBurst="
++                    .. tostring(
++                        sameBurst
++                    )
+             )
+ 
+             if lowHPRatio(
+@@ -589,6 +639,8 @@
+                 ),
+             LastPlayerHitAt =
+                 S.LastPlayerHitAt,
++            HitBurstUntil =
++                S.HitBurstUntil,
+             LastTargetHP =
+                 S.LastTargetHP,
+             LastTargetDamageAt =

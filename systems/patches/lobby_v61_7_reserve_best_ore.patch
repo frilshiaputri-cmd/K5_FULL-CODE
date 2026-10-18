@@ -1,0 +1,176 @@
+--- a/systems/lobby.lua
++++ b/systems/lobby.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - BALANCED FORGE + PROGRESSION LOBBY V61.6
++-- IRON SOUL - RESERVED-BEST-ORE FORGE + PROGRESSION LOBBY V61.7
+ --
+ -- RUN IN LOBBY.
+ --
+@@ -2675,6 +2675,85 @@
+         highest
+ end
+ 
++-- Drain policy for long-running farming:
++-- preserve premium ores instead of spending the best 70 just to empty the bag.
++-- Upgrade attempts use buildBestOreMap(); routine capacity drain uses this.
++local function buildWorstOreMap(
++    amountNeeded
++)
++    local _, _, ores =
++        oreTotalAndMax()
++
++    local rows = {}
++
++    for id, amount in pairs(ores) do
++        amount =
++            math.floor(
++                num(amount)
++            )
++
++        if amount > 0 then
++            table.insert(
++                rows,
++                {
++                    ID = id,
++                    Amount = amount,
++                    Score =
++                        oreQuality(id),
++                }
++            )
++        end
++    end
++
++    table.sort(
++        rows,
++        function(a,b)
++            if a.Score
++                ~= b.Score
++            then
++                return a.Score
++                    < b.Score
++            end
++
++            return a.Amount
++                > b.Amount
++        end
++    )
++
++    local map = {}
++    local used = 0
++    local lowest = nil
++
++    for _, row in ipairs(rows) do
++        if used
++            >= amountNeeded
++        then
++            break
++        end
++
++        local take =
++            math.min(
++                row.Amount,
++                amountNeeded
++                    - used
++            )
++
++        if take > 0 then
++            map[row.ID] = take
++            used += take
++
++            if not lowest then
++                lowest =
++                    row.ID
++            end
++        end
++    end
++
++    return map,
++        used,
++        lowest
++end
++
+ local function forgeOreMap(
+     oreMap,
+     forgeType
+@@ -3721,7 +3800,7 @@
+ inventoryCleanup()
+ 
+ local SMART_FORGE_STATUS_FILE =
+-    "IronSoul_LastSmartForge_V61_6.txt"
++    "IronSoul_LastSmartForge_V61_7.txt"
+ 
+ local function writeSmartForgeStatus(lines)
+     if type(writefile)
+@@ -3955,12 +4034,28 @@
+                 total
+             )
+ 
++        -- Preserve the strongest ores for future progression. Only the two
++        -- deliberate upgrade attempts (and missing-slot recovery) consume
++        -- premium ore. Bulk capacity drain consumes the lowest-quality ore.
++        local useBestOre =
++            role == "FillHelmet"
++            or role == "FillBreastplate"
++            or role == "SwordUpgrade"
++            or role == "HelmetUpgrade"
++
+         local oreMap,
+             used,
+             highest =
+-                buildBestOreMap(
+-                    amount
+-                )
++                (
++                    useBestOre
++                    and buildBestOreMap
++                    or buildWorstOreMap
++                )(amount)
++
++        local orePolicy =
++            useBestOre
++            and "BEST"
++            or "RESERVE_BEST_DRAIN_WORST"
+ 
+         if used < 3 then
+             break
+@@ -3990,6 +4085,8 @@
+                 Role = role,
+                 ForgeType =
+                     forgeType,
++                OrePolicy =
++                    orePolicy,
+                 Ores = used,
+                 HighestOre =
+                     highest,
+@@ -4042,8 +4139,8 @@
+         inventoryCount()
+ 
+     local lines = {
+-        "Version=V61.6",
+-        "Mode=BALANCED_BEST_ORE",
++        "Version=V61.7",
++        "Mode=RESERVE_BEST_ORE",
+         "Trigger="
+             .. tostring(trigger),
+         "OreBefore="
+@@ -4101,6 +4198,10 @@
+                 )
+                 .. "|"
+                 .. tostring(
++                    row.OrePolicy
++                )
++                .. "|"
++                .. tostring(
+                     row.Class
+                 )
+                 .. "|"
+@@ -4140,7 +4241,7 @@
+     then
+         pcall(
+             writefile,
+-            "IronSoul_ForgeHistory_V61_6_"
++            "IronSoul_ForgeHistory_V61_7_"
+                 .. tostring(
+                     os.time()
+                 )

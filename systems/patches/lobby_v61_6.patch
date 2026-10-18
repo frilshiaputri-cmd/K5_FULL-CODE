@@ -1,1 +1,337 @@
-
+--- a/systems/lobby.lua
++++ b/systems/lobby.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - AUTO CODES + PROGRESSION LOBBY V60.1
++-- IRON SOUL - BALANCED FORGE + PROGRESSION LOBBY V61.6
+ --
+ -- RUN IN LOBBY.
+ --
+@@ -78,6 +78,13 @@
+     INVENTORY_CLEAN_AT = 85,
+     INVENTORY_TARGET = 70,
+ 
++    -- Smart ore forge:
++    -- start before absolute full to avoid losing the next dungeon's ores,
++    -- then drain deeply so Lobby maintenance is infrequent.
++    ORE_FORGE_TRIGGER_RATIO = 0.90,
++    ORE_FORGE_TARGET = 30,
++    ORE_FORGE_MAX_CRAFTS = 14,
++
+     LOAD_TIMEOUT = 25,
+     TELEPORT_TIMEOUT = 18,
+ }
+@@ -3714,7 +3721,7 @@
+ inventoryCleanup()
+ 
+ local SMART_FORGE_STATUS_FILE =
+-    "IronSoul_LastSmartForge_V60_1.txt"
++    "IronSoul_LastSmartForge_V61_6.txt"
+ 
+ local function writeSmartForgeStatus(lines)
+     if type(writefile)
+@@ -3737,17 +3744,30 @@
+             oreTotalAndMax()
+ 
+     if not initialMax
+-        or initialTotal
+-            < initialMax
++        or initialMax <= 0
+     then
+         return true
+     end
+ 
++    local trigger =
++        math.max(
++            3,
++            math.floor(
++                initialMax
++                    * CFG.ORE_FORGE_TRIGGER_RATIO
++            )
++        )
++
++    if initialTotal < trigger then
++        return true
++    end
++
+     local target =
+-        math.max(
+-            20,
+-            math.floor(
+-                initialMax * 0.70
++        math.min(
++            CFG.ORE_FORGE_TARGET,
++            math.max(
++                0,
++                initialMax - 3
+             )
+         )
+ 
+@@ -3762,14 +3782,15 @@
+             .. tostring(initialTotal)
+             .. "/"
+             .. tostring(initialMax)
+-            .. " | smart forge"
++            .. " | balanced forge → ≤"
++            .. tostring(target)
+     )
+ 
+     local forged = 0
+     local results = {}
+ 
+-    -- If armor slots are missing, make the first craft specifically useful.
+-    local d = pdata()
++    local d =
++        pdata()
+ 
+     local slots =
+         d
+@@ -3783,6 +3804,21 @@
+     local needBreastplate =
+         not slots.Breastplate
+ 
++    -- One deterministic Sword and one deterministic Helmet upgrade attempt
++    -- per maintenance cycle. Remaining ore is drained efficiently with
++    -- 22-ore Breastplate crafts.
++    --
++    -- This avoids the old behavior where virtually every full-bag cycle
++    -- became Armor-only.
++    local swordAttempted =
++        false
++
++    local helmetAttempted =
++        false
++
++    local smallAlternate =
++        false
++
+     local total =
+         initialTotal
+ 
+@@ -3790,7 +3826,8 @@
+         initialMax
+ 
+     while total > target
+-        and forged < 10
++        and forged
++            < CFG.ORE_FORGE_MAX_CRAFTS
+     do
+         if inventoryCount() >= 84 then
+             equipmentPass()
+@@ -3808,37 +3845,108 @@
+         local excess =
+             total - target
+ 
+-        local amount
++        local amount =
++            3
++
+         local forgeType =
+             "Armor"
+ 
++        local role =
++            "Helmet"
++
++        -- Missing equipment slots have first priority.
+         if needHelmet then
+-            amount = 3
+-            needHelmet = false
++            forgeType =
++                "Armor"
++
++            amount =
++                3
++
++            role =
++                "FillHelmet"
++
++            needHelmet =
++                false
+ 
+         elseif needBreastplate then
++            forgeType =
++                "Armor"
++
+             amount =
+                 math.min(
+                     22,
+-                    excess
+-                )
+-
+-            if amount < 3 then
+-                amount = 3
++                    total
++                )
++
++            role =
++                "FillBreastplate"
++
++            needBreastplate =
++                false
++
++        -- Then give the primary NEWBIE Sword one high-quality deterministic
++        -- 3-ore attempt every maintenance cycle.
++        elseif not swordAttempted then
++            forgeType =
++                "Weapon"
++
++            amount =
++                3
++
++            role =
++                "SwordUpgrade"
++
++            swordAttempted =
++                true
++
++        -- And one deterministic Helmet attempt so body armor isn't the only
++        -- thing that can improve.
++        elseif not helmetAttempted then
++            forgeType =
++                "Armor"
++
++            amount =
++                3
++
++            role =
++                "HelmetUpgrade"
++
++            helmetAttempted =
++                true
++
++        -- Large remaining excess: 22 Armor is the deterministic body slot
++        -- and drains ore efficiently.
++        elseif excess >= 22 then
++            forgeType =
++                "Armor"
++
++            amount =
++                22
++
++            role =
++                "BreastplateUpgrade"
++
++        -- Small tail: alternate 3-ore Sword/Helmet attempts until <=30.
++        else
++            smallAlternate =
++                not smallAlternate
++
++            if smallAlternate then
++                forgeType =
++                    "Weapon"
++
++                role =
++                    "SwordTail"
++            else
++                forgeType =
++                    "Armor"
++
++                role =
++                    "HelmetTail"
+             end
+ 
+-            needBreastplate = false
+-
+-        else
+             amount =
+-                math.min(
+-                    22,
+-                    excess
+-                )
+-
+-            if amount < 3 then
+-                amount = 3
+-            end
++                3
+         end
+ 
+         amount =
+@@ -3879,6 +3987,9 @@
+             results,
+             {
+                 Craft = forged,
++                Role = role,
++                ForgeType =
++                    forgeType,
+                 Ores = used,
+                 HighestOre =
+                     highest,
+@@ -3905,6 +4016,8 @@
+             }
+         )
+ 
++        -- Immediately equip any actual upgrade; low-value failures can later
++        -- be cleaned by the existing protected inventory logic.
+         equipmentPass()
+ 
+         total,
+@@ -3929,7 +4042,10 @@
+         inventoryCount()
+ 
+     local lines = {
+-        "Version=V60.1",
++        "Version=V61.6",
++        "Mode=BALANCED_BEST_ORE",
++        "Trigger="
++            .. tostring(trigger),
+         "OreBefore="
+             .. tostring(
+                 initialTotal
+@@ -3938,7 +4054,7 @@
+             .. tostring(
+                 initialMax
+             ),
+-        "OreTarget="
++        "OreTarget=<="
+             .. tostring(target),
+         "OreAfter="
+             .. tostring(
+@@ -3977,6 +4093,14 @@
+                 )
+                 .. "="
+                 .. tostring(
++                    row.Role
++                )
++                .. "|"
++                .. tostring(
++                    row.ForgeType
++                )
++                .. "|"
++                .. tostring(
+                     row.Class
+                 )
+                 .. "|"
+@@ -4009,6 +4133,24 @@
+     writeSmartForgeStatus(
+         lines
+     )
++
++    -- Preserve each forge maintenance cycle instead of only the latest one.
++    if type(writefile)
++        == "function"
++    then
++        pcall(
++            writefile,
++            "IronSoul_ForgeHistory_V61_6_"
++                .. tostring(
++                    os.time()
++                )
++                .. ".txt",
++            table.concat(
++                lines,
++                "\n"
++            )
++        )
++    end
+ 
+     important(
+         "Ore forge | "
+@@ -4033,7 +4175,7 @@
+ 
+     return finalMax
+         and finalTotal
+-            < finalMax
++            < trigger
+ end
+ 
+ smartForgeFullOreBag()

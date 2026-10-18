@@ -1,0 +1,494 @@
+--- a/systems/telemetry.lua
++++ b/systems/telemetry.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - SELF-HEALING TRANSITION TELEMETRY V61.5
++-- IRON SOUL - MULTI-MATCH ARCHIVE TELEMETRY V61.6
+ --========================================================--
+ 
+ return function(D)
+@@ -19,10 +19,326 @@
+     local started = false
+ 
+     local TRACE_FILE =
+-        "IronSoul_Telemetry_V61_5.txt"
++        "IronSoul_Telemetry_V61_6.txt"
+ 
+     local STATE_FILE =
+-        "IronSoul_LastState_V61_5.txt"
++        "IronSoul_LastState_V61_6.txt"
++
++    --========================================================--
++    -- V61.6 MATCH ARCHIVE
++    --
++    -- Top-level files remain convenient "latest match" files.
++    -- Every dungeon job also gets its own permanent folder so later matches
++    -- never erase earlier diagnostics.
++    --========================================================--
++
++    local ArchiveFullRows = {}
++    local MatchStartedClock =
++        os.clock()
++
++    local MatchStartedUnix =
++        os.time()
++
++    local function initialTeleportData()
++        local data = nil
++
++        pcall(function()
++            data =
++                TeleportService:
++                    GetLocalPlayerTeleportData()
++        end)
++
++        return type(data)
++                == "table"
++            and data
++            or {}
++    end
++
++    local InitialTeleportData =
++        initialTeleportData()
++
++    local InitialDiff =
++        InitialTeleportData.DiffLevel
++        or InitialTeleportData.Diff
++        or "?"
++
++    local InitialWorld =
++        InitialTeleportData.WorldId
++        or InitialTeleportData.World
++        or "?"
++
++    local JobShort =
++        string.sub(
++            tostring(
++                game.JobId
++            ),
++            1,
++            8
++        )
++
++    if JobShort == "" then
++        JobShort =
++            "nojob"
++    end
++
++    local MatchStamp =
++        os.date(
++            "%Y%m%d_%H%M%S",
++            MatchStartedUnix
++        )
++
++    local MatchId =
++        MatchStamp
++        .. "_"
++        .. tostring(
++            game.PlaceId
++        )
++        .. "_"
++        .. tostring(
++            JobShort
++        )
++        .. "_D"
++        .. tostring(
++            InitialDiff
++        )
++
++    local ArchiveRoot =
++        "IronSoul_MatchHistory_V61_6"
++
++    local ArchiveDir =
++        ArchiveRoot
++        .. "/"
++        .. MatchId
++
++    local FolderArchiveReady =
++        false
++
++    if type(makefolder)
++        == "function"
++    then
++        pcall(
++            makefolder,
++            ArchiveRoot
++        )
++
++        local ok =
++            pcall(
++                makefolder,
++                ArchiveDir
++            )
++
++        FolderArchiveReady =
++            ok == true
++    end
++
++    local function archivePath(
++        name
++    )
++        if FolderArchiveReady then
++            return ArchiveDir
++                .. "/"
++                .. tostring(name)
++        end
++
++        -- Fallback for executors without makefolder.
++        return "IronSoul_MatchHistory_V61_6_"
++            .. MatchId
++            .. "_"
++            .. tostring(name)
++    end
++
++    local function archiveWrite(
++        name,
++        text
++    )
++        if type(writefile)
++            ~= "function"
++        then
++            return false
++        end
++
++        return pcall(
++            writefile,
++            archivePath(name),
++            tostring(text or "")
++        )
++    end
++
++    local function archiveAppend(
++        name,
++        text
++    )
++        if type(writefile)
++            ~= "function"
++        then
++            return false
++        end
++
++        local path =
++            archivePath(name)
++
++        if type(appendfile)
++            == "function"
++        then
++            return pcall(
++                appendfile,
++                path,
++                tostring(text or "")
++            )
++        end
++
++        -- Safe fallback. Match logs are small enough that keeping all rows
++        -- in memory for one dungeon run is reasonable.
++        table.insert(
++            ArchiveFullRows,
++            tostring(text or "")
++        )
++
++        return pcall(
++            writefile,
++            path,
++            table.concat(
++                ArchiveFullRows
++            )
++        )
++    end
++
++    local MatchStats = {
++        Targets = 0,
++        PlayerHits = 0,
++        PlayerDamage = 0,
++        GateSuccess = 0,
++        GateFail = 0,
++        WatchdogStarts = 0,
++        WatchdogSuccess = 0,
++        WatchdogExhausted = 0,
++        LastEvent = "START",
++    }
++
++    local function writeMatchSummary(
++        label
++    )
++        local st =
++            state()
++
++        local elapsed =
++            os.clock()
++            - MatchStartedClock
++
++        local lines = {
++            "Version=V61.6",
++            "MatchId="
++                .. tostring(
++                    MatchId
++                ),
++            "Label="
++                .. tostring(
++                    label
++                ),
++            "World="
++                .. tostring(
++                    InitialWorld
++                ),
++            "Diff="
++                .. tostring(
++                    InitialDiff
++                ),
++            "PlaceId="
++                .. tostring(
++                    game.PlaceId
++                ),
++            "JobId="
++                .. tostring(
++                    game.JobId
++                ),
++            "Elapsed="
++                .. string.format(
++                    "%.2f",
++                    elapsed
++                ),
++            "State="
++                .. tostring(
++                    st.State
++                ),
++            "GameRound="
++                .. tostring(
++                    D.gameRound()
++                ),
++            "TargetsCompleted="
++                .. tostring(
++                    MatchStats.Targets
++                ),
++            "PlayerHits="
++                .. tostring(
++                    MatchStats.PlayerHits
++                ),
++            "PlayerDamage="
++                .. string.format(
++                    "%.1f",
++                    MatchStats.PlayerDamage
++                ),
++            "GateSuccess="
++                .. tostring(
++                    MatchStats.GateSuccess
++                ),
++            "GateFail="
++                .. tostring(
++                    MatchStats.GateFail
++                ),
++            "WatchdogStarts="
++                .. tostring(
++                    MatchStats.WatchdogStarts
++                ),
++            "WatchdogSuccess="
++                .. tostring(
++                    MatchStats.WatchdogSuccess
++                ),
++            "WatchdogExhausted="
++                .. tostring(
++                    MatchStats.WatchdogExhausted
++                ),
++            "LastEvent="
++                .. tostring(
++                    MatchStats.LastEvent
++                ),
++        }
++
++        archiveWrite(
++            "MatchSummary.txt",
++            table.concat(
++                lines,
++                "\n"
++            )
++        )
++    end
++
++    archiveWrite(
++        "MatchInfo.txt",
++        table.concat({
++            "Version=V61.6",
++            "MatchId=" .. MatchId,
++            "StartedUnix="
++                .. tostring(
++                    MatchStartedUnix
++                ),
++            "World="
++                .. tostring(
++                    InitialWorld
++                ),
++            "Diff="
++                .. tostring(
++                    InitialDiff
++                ),
++            "PlaceId="
++                .. tostring(
++                    game.PlaceId
++                ),
++            "JobId="
++                .. tostring(
++                    game.JobId
++                ),
++        }, "\n")
++    )
+ 
+     local function sv(v)
+         if v == nil then
+@@ -87,7 +403,20 @@
+                     "\n"
+                 )
+             )
+-        end
++
++            archiveAppend(
++                "TelemetryFull.txt",
++                string.format(
++                    "[%.2f] %s\n",
++                    os.clock(),
++                    tostring(text)
++                )
++            )
++        end
++
++        writeMatchSummary(
++            "RUNNING"
++        )
+     end
+ 
+     local function counts()
+@@ -397,7 +726,7 @@
+         end)
+ 
+         local lines = {
+-            "Version=V61.5",
++            "Version=V61.6",
+             "Label="
+                 .. sv(label),
+             "State="
+@@ -849,13 +1178,21 @@
+         if type(writefile)
+             == "function"
+         then
++            local snapshotText =
++                table.concat(
++                    lines,
++                    "\n"
++                )
++
+             pcall(
+                 writefile,
+                 STATE_FILE,
+-                table.concat(
+-                    lines,
+-                    "\n"
+-                )
++                snapshotText
++            )
++
++            archiveWrite(
++                "LastState.txt",
++                snapshotText
+             )
+         end
+ 
+@@ -868,6 +1205,65 @@
+     function T:Event(name, detail)
+         lastProgress =
+             os.clock()
++
++        MatchStats.LastEvent =
++            tostring(name)
++
++        if name == "TARGET_RESULT"
++            and string.find(
++                tostring(detail),
++                "=> true",
++                1,
++                true
++            )
++        then
++            MatchStats.Targets += 1
++
++        elseif name == "PLAYER_HIT" then
++            MatchStats.PlayerHits += 1
++
++            local amount =
++                tonumber(
++                    string.match(
++                        tostring(detail),
++                        "damage=([%d%.]+)"
++                    )
++                )
++                or 0
++
++            MatchStats.PlayerDamage +=
++                amount
++
++        elseif name == "GATE_RESULT" then
++            if string.find(
++                tostring(detail),
++                "ok=true",
++                1,
++                true
++            )
++            then
++                MatchStats.GateSuccess += 1
++            else
++                MatchStats.GateFail += 1
++            end
++
++        elseif name == "WATCHDOG_START"
++            or name == "GATE_WATCHDOG_START"
++        then
++            MatchStats.WatchdogStarts += 1
++
++        elseif name == "WATCHDOG_PORTAL_SUCCESS"
++            or name == "WATCHDOG_LEARNED_SUCCESS"
++            or name == "WATCHDOG_PROBE_SUCCESS"
++            or name == "GATE_WATCHDOG_SUCCESS"
++        then
++            MatchStats.WatchdogSuccess += 1
++
++        elseif name == "WATCHDOG_EXHAUSTED"
++            or name == "GATE_WATCHDOG_NO_ROUTE"
++        then
++            MatchStats.WatchdogExhausted += 1
++        end
+ 
+         append(
+             tostring(name)
+@@ -884,6 +1280,32 @@
+ 
+         self:
+             Snapshot(name)
++
++        if name == "SETTLEMENT" then
++            writeMatchSummary(
++                "SETTLEMENT"
++            )
++        end
++    end
++
++    function T:ArchiveFile(
++        name,
++        text
++    )
++        return archiveWrite(
++            name,
++            text
++        )
++    end
++
++    function T:GetMatchId()
++        return MatchId
++    end
++
++    function T:GetArchiveDir()
++        return FolderArchiveReady
++            and ArchiveDir
++            or nil
+     end
+ 
+     function T:Start()

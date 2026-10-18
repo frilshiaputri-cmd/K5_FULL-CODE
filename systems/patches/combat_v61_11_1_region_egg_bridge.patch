@@ -1,0 +1,61 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -4026,31 +4026,28 @@
+                         castSkill = castSkill,
+ 
+                         hasNormalObjective = function()
+-                            -- This resolver is constructed before the local
+-                            -- currentDragonEgg() declaration later in the
+-                            -- file. Do not close over that not-yet-visible
+-                            -- local; inspect the replicated objective directly.
+-                            local egg =
+-                                workspace:FindFirstChild(
+-                                    "DragonEgg"
+-                                )
+-
+-                            local eggAlive =
+-                                egg ~= nil
+-                                and egg.Parent ~= nil
+-                                and egg:GetAttribute(
+-                                    "Broken"
+-                                ) ~= true
+-
+-                            return #liveEnemies() > 0
+-                                or eggAlive
++                            -- V61.11.1: use the SAME region-aware DragonEgg
++                            -- resolver as normal combat. The V61.10 direct
++                            -- workspace check could see a stale/future egg in
++                            -- another streamed branch and silently block every
++                            -- unknown-objective probe in the current room.
++                            local eggFn =
++                                getgenv().IronSoulCurrentDragonEgg
++
++                            local egg = nil
++
++                            if type(eggFn) == "function" then
++                                local ok, value = pcall(eggFn)
++
++                                if ok then
++                                    egg = value
++                                end
++                            end
++
++                            return #liveEnemies() > 0
++                                or egg ~= nil
+                         end,
+ 
+                         event = function(name, detail)
+@@ -4629,6 +4626,13 @@
+ 
+     return egg
+ end
++
++-- Publish only after the region-aware helper actually exists. The objective
++-- resolver is constructed earlier in the file, so it resolves this bridge at
++-- RUN TIME instead of closing over an undeclared local or scanning a global
++-- stale DragonEgg.
++getgenv().IronSoulCurrentDragonEgg =
++    currentDragonEgg
+ 
+ local function eggPromptPart(prompt)
+     if not prompt then

@@ -1,0 +1,26 @@
+--- a/systems/telemetry.lua
++++ b/systems/telemetry.lua
+@@ -218,8 +218,21 @@
+     local function writeMatchSummary(
+         label
+     )
+-        local st =
+-            state()
++        local st = {}
++
++        local stateOk,
++            stateValue =
++                pcall(
++                    D.getState
++                )
++
++        if stateOk
++            and type(stateValue)
++                == "table"
++        then
++            st =
++                stateValue
++        end
+ 
+         local elapsed =
+             os.clock()

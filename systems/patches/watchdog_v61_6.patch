@@ -1,0 +1,170 @@
+--- a/systems/transition_watchdog.lua
++++ b/systems/transition_watchdog.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - SELF-HEALING TRANSITION WATCHDOG V61.5
++-- IRON SOUL - SELF-HEALING TRANSITION WATCHDOG V61.6
+ --
+ -- Purpose:
+ --   Recover empty post-gate states without hardcoding D3/D4 coordinates.
+@@ -45,13 +45,16 @@
+         D.LocalPlayer
+ 
+     local LEARN_FILE =
+-        "IronSoul_TransitionLearn_V61_5.json"
++        "IronSoul_TransitionLearn_V61_6.json"
+ 
+     local SNAPSHOT_FILE =
+-        "IronSoul_LastTransitionWatchdog_V61_5.txt"
++        "IronSoul_LastTransitionWatchdog_V61_6.txt"
+ 
+     local LastAttempt =
+         -math.huge
++
++    local AttemptCount =
++        0
+ 
+     local Learn = {}
+ 
+@@ -583,7 +586,18 @@
+                         - r.Position
+                     ).Magnitude
+ 
+-                if dist <= 120 then
++                local character =
++                    LocalPlayer.Character
++
++                if dist <= 120
++                    and not (
++                        character
++                        and part:
++                            IsDescendantOf(
++                                character
++                            )
++                    )
++                then
+                     local path =
+                         D.fullName(part)
+ 
+@@ -614,18 +628,20 @@
+                         end
+                     end
+ 
+-                    table.insert(
+-                        out,
+-                        {
+-                            Part = part,
+-                            Distance =
+-                                dist,
+-                            Score =
+-                                score,
+-                            Path =
+-                                path,
+-                        }
+-                    )
++                    if score > 0 then
++                        table.insert(
++                            out,
++                            {
++                                Part = part,
++                                Distance =
++                                    dist,
++                                Score =
++                                    score,
++                                Path =
++                                    path,
++                            }
++                        )
++                    end
+                 end
+             end
+         end
+@@ -664,7 +680,7 @@
+             root()
+ 
+         local lines = {
+-            "Version=V61.5",
++            "Version=V61.6",
+             "Label="
+                 .. tostring(label),
+             "Diff="
+@@ -807,14 +823,42 @@
+             )
+         end
+ 
++        local snapshotText =
++            table.concat(
++                lines,
++                "\n"
++            )
++
+         pcall(
+             writefile,
+             SNAPSHOT_FILE,
+-            table.concat(
+-                lines,
+-                "\n"
+-            )
+-        )
++            snapshotText
++        )
++
++        local telemetry =
++            getgenv().IronSoulTelemetry
++
++        if telemetry
++            and type(
++                telemetry.ArchiveFile
++            ) == "function"
++        then
++            pcall(
++                telemetry.ArchiveFile,
++                telemetry,
++                "Watchdog_"
++                    .. string.format(
++                        "%03d",
++                        AttemptCount
++                    )
++                    .. "_R"
++                    .. tostring(
++                        D.gameRound()
++                    )
++                    .. ".txt",
++                snapshotText
++            )
++        end
+     end
+ 
+     local function nativeWalk(
+@@ -1036,7 +1080,7 @@
+             learnSuccess(
+                 "PORTAL",
+                 beforeRound,
+-                verifyFrom,
++                beforePos,
+                 row.Root.Position,
+                 result
+             )
+@@ -1113,7 +1157,12 @@
+                 - source
+             ).Magnitude
+ 
+-        if sourceDist > 120 then
++        local sourceLimit =
++            learned.kind == "PORTAL"
++            and 420
++            or 120
++
++        if sourceDist > sourceLimit then
+             return false
+         end
+ 
+@@ -1420,6 +1469,8 @@
+         LastAttempt =
+             now
+ 
++        AttemptCount += 1
++
+         if hasObjective() then
+             return false,
+                 "OBJECTIVE_ACTIVE"

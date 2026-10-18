@@ -1,0 +1,202 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -7988,7 +7988,7 @@
+     -- Keep a little more headroom before interrupting a repeat streak.
+     if inventoryCountNow()
+-        >= 90
++        >= INVENTORY_CLEAN_AT
+     then
+         return true,
+             "INVENTORY_HIGH"
+@@ -8498,7 +8498,7 @@
+     queueNext(
+         "dungeon -> lobby: "
+             .. tostring(reason)
+     )
+ 
+-    task.wait(0.20)
++    task.wait(0.05)
+ 
+     local remote =
+         WorldUtil
+@@ -8546,7 +8546,7 @@
+                         end
+                     end,
+-                    5,
++                    2.0,
+                     0.10
+                 )
+ 
+@@ -8871,13 +8871,31 @@
+     -- Give settlement UI/server state time to fully settle.
+     local button =
+         waitReplayUIReady(
+-            8
++            1.40
+         )
+ 
+-    task.wait(0.65)
++    if not button then
++        important(
++            "Replay | UI unavailable, returning Lobby"
++        )
++
++        return false,
++            "REPLAY_UI_NOT_READY"
++    end
++
++    -- Zero-new-local 24/7 guard: do not replay when settlement rewards have
++    -- already filled a bag or pushed equipment to the cleanup threshold.
++    if dungeonBagFullStatus()
++        or inventoryCountNow()
++            >= INVENTORY_CLEAN_AT
++    then
++        important(
++            "Replay | maintenance required, returning Lobby"
++        )
++
++        return false,
++            "REPLAY_MAINTENANCE_REQUIRED"
++    end
++
++    task.wait(0.18)
+ 
+     local oldRound =
+         gameRound()
+@@ -8934,7 +8952,7 @@
+                     )
+                 end,
+                 oldRound,
+-                12,
++                1.10,
+                 players
+             )
+ 
+@@ -8944,6 +8962,19 @@
+                 "PLAY_AGAIN_ALONE_SIGNAL"
+         end
++
++        if num(
++            GameRoundCfg:GetAttribute(
++                "VotedAgainCount"
++            )
++        ) >= players
++        then
++            important(
++                "Replay | vote full but restart did not begin, returning Lobby"
++            )
++
++            return false,
++                "REPLAY_VOTE_FULL_STUCK"
++        end
+     end
+ 
+     -- ========================================================
+@@ -8969,7 +9000,7 @@
+                         )
+                 end,
+                 oldRound,
+-                15,
++                1.45,
+                 players
+             )
+ 
+@@ -8979,9 +9010,21 @@
+                 "PLAY_AGAIN_ALONE_REMOTE"
+         end
+ 
++        if num(
++            GameRoundCfg:GetAttribute(
++                "VotedAgainCount"
++            )
++        ) >= players
++        then
++            important(
++                "Replay | native vote full/stuck, returning Lobby"
++            )
++
++            return false,
++                "REPLAY_VOTE_FULL_STUCK"
++        end
++
+         -- Retry the independent route once, after a short server cooldown.
+-        task.wait(0.8)
++        task.wait(0.15)
+ 
+         ok =
+             runReplayRoute(
+@@ -8996,7 +9039,7 @@
+                         )
+                 end,
+                 oldRound,
+-                15,
++                1.45,
+                 players
+             )
+ 
+@@ -9028,7 +9071,7 @@
+                         )
+                 end,
+                 oldRound,
+-                15,
++                1.10,
+                 players
+             )
+ 
+@@ -9320,6 +9363,48 @@
+     return
+ end
+ 
++-- Fast 24/7 maintenance exit. IMPORTANT: this section deliberately creates
++-- ZERO new top-level locals because combat.lua is already at Luau's local
++-- register ceiling. Scratch values live briefly in getgenv() instead.
++getgenv().IronSoulFastSettlementScratch =
++    {
++        dungeonBagFullStatus()
++    }
++
++getgenv().IronSoulFastSettlementScratch.Inventory =
++    inventoryCountNow()
++
++if getgenv().IronSoulFastSettlementScratch[1]
++    or getgenv().IronSoulFastSettlementScratch.Inventory
++        >= INVENTORY_CLEAN_AT
++then
++    important(
++        "Maintenance | immediate Lobby | "
++            .. tostring(
++                getgenv().IronSoulFastSettlementScratch[1]
++                and getgenv().IronSoulFastSettlementScratch[2]
++                or "INVENTORY_HIGH"
++            )
++    )
++
++    writeJournal({
++        State = "FAST_MAINTENANCE",
++        Decision = "LOBBY_MAINTENANCE",
++        World = journal.World or "?",
++        Diff = journal.Diff or "?",
++        DirectRepeats = 0,
++        FailureCount = journal.FailureCount or 0,
++        UpdatedAt = os.time(),
++    })
++
++    directLobby(
++        getgenv().IronSoulFastSettlementScratch[1]
++        and (
++            "BAG_FULL_"
++            .. tostring(
++                getgenv().IronSoulFastSettlementScratch[2]
++            )
++        )
++        or "INVENTORY_HIGH"
++    )
++
++    getgenv().IronSoulFastSettlementScratch = nil
++    return
++end
++
++getgenv().IronSoulFastSettlementScratch = nil
++
+ -- Let settlement rewards / clear state replicate.
+ task.wait(1.25)

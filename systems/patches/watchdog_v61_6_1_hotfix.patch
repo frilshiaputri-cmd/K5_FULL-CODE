@@ -1,0 +1,19 @@
+--- a/systems/transition_watchdog.lua
++++ b/systems/transition_watchdog.lua
+@@ -952,8 +952,15 @@
+         local oldRegion =
+             currentRegion()
+ 
++        -- Preserve the real checkpoint position BEFORE the fast portal snap.
++        -- V61.6 route learning used this name but never initialized it,
++        -- causing v3Table(nil) -> "attempt to index nil with X" after a
++        -- successful watchdog transition.
++        local beforePos =
++            r.Position
++
+         local fromPortal =
+-            r.Position
++            beforePos
+             - row.Root.Position
+ 
+         fromPortal =

@@ -1,0 +1,87 @@
+--- a/systems/transition_watchdog.lua
++++ b/systems/transition_watchdog.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - SELF-HEALING TRANSITION WATCHDOG V61.6
++-- IRON SOUL - LEARNED FAST-PATH TRANSITION WATCHDOG V61.8
+ --
+ -- Purpose:
+ --   Recover empty post-gate states without hardcoding D3/D4 coordinates.
+@@ -1255,7 +1255,77 @@
+         return false
+     end
+ 
++    function W:HasLearnedRoute()
++        local r =
++            root()
++
++        local round =
++            D.gameRound()
++
++        if not r
++            or not round
++            or hasObjective()
++        then
++            return false,
++                "UNAVAILABLE"
++        end
++
++        local key =
++            routeKey(round)
++
++        local learned =
++            Learn[key]
++
++        if type(learned)
++            ~= "table"
++        then
++            return false,
++                "NO_LEARNED_ROUTE"
++        end
++
++        local source =
++            tableV3(
++                learned.source
++            )
++
++        local target =
++            tableV3(
++                learned.target
++            )
++
++        if not source
++            or not target
++        then
++            return false,
++                "INVALID_LEARNED_ROUTE"
++        end
++
++        local sourceDist =
++            (
++                r.Position
++                - source
++            ).Magnitude
++
++        local sourceLimit =
++            learned.kind == "PORTAL"
++            and 420
++            or 120
++
++        if sourceDist > sourceLimit then
++            return false,
++                "SOURCE_TOO_FAR",
++                learned.kind,
++                sourceDist
++        end
++
++        return true,
++            key,
++            learned.kind
++                or "LEARNED",
++            sourceDist
++    end
++
+     local function probeDirections(
+         futureDoors
+     )
+         local r =

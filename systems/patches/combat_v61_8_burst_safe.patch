@@ -1,0 +1,60 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - BOSS-SAFE 24x7 COMBAT V61.7
++-- IRON SOUL - BOSS-BURST-SAFE 24x7 COMBAT V61.8
+ --
+ -- MAJOR CHANGE:
+ -- Portal/gate progression now uses the GAME'S EXACT route recovered
+@@ -225,13 +225,18 @@
+     ADAPTIVE_DEFAULT_HEIGHT = 9.0,
+     ADAPTIVE_DEFAULT_OFFSET = 1.50,
+ 
+-    ADAPTIVE_EVADE_HEIGHT = 9.75,
+-    ADAPTIVE_EVADE_OFFSET = 4.25,
+-    ADAPTIVE_EVADE_YAW = 74,
+-
+-    ADAPTIVE_WIDE_HEIGHT = 10.50,
+-    ADAPTIVE_WIDE_OFFSET = 4.75,
+-    ADAPTIVE_WIDE_YAW = 104,
++    -- V61.8: first reactive escape moves clearly above/outside the boss
++    -- instead of orbiting through the same lingering hitbox.
++    ADAPTIVE_EVADE_HEIGHT = 11.25,
++    ADAPTIVE_EVADE_OFFSET = 4.75,
++    ADAPTIVE_EVADE_YAW = 78,
++
++    -- Repeated hit in the same burst: stronger high/far escape. 12.25 is
++    -- intentionally below the old 13-stud zone that became inconsistent
++    -- as a permanent farm position; this profile is temporary only.
++    ADAPTIVE_WIDE_HEIGHT = 12.25,
++    ADAPTIVE_WIDE_OFFSET = 6.25,
++    ADAPTIVE_WIDE_YAW = 110,
+ 
+     -- Verified close-recovery position when our hits are not registering.
+     ADAPTIVE_RECOVERY_HEIGHT = 5.5,
+@@ -239,14 +244,18 @@
+ 
+     -- Boss / survival movement. Attacks continue during every profile.
+     ADAPTIVE_BOSS_HP = 1500,
+     ADAPTIVE_THREAT_PLAYER_HP_MULTIPLIER = 3.0,
+     ADAPTIVE_THREAT_PRIORITY_RADIUS = 180,
+-    ADAPTIVE_BOSS_HEIGHT = 9.0,
+-    ADAPTIVE_BOSS_OFFSET = 3.75,
+-    ADAPTIVE_BOSS_ORBIT_SPEED = 78,
+-
+-    ADAPTIVE_EVADE_ORBIT_SPEED = 128,
+-    ADAPTIVE_WIDE_ORBIT_SPEED = 162,
++    -- Boss base is slightly higher and closer to directly-over-center.
++    -- Normal mobs remain at the proven 9-stud profile.
++    ADAPTIVE_BOSS_HEIGHT = 10.25,
++    ADAPTIVE_BOSS_OFFSET = 3.00,
++    ADAPTIVE_BOSS_ORBIT_SPEED = 72,
++
++    -- During a damage burst, hold the chosen escape side instead of
++    -- circling back through the same attack volume.
++    ADAPTIVE_EVADE_ORBIT_SPEED = 0,
++    ADAPTIVE_WIDE_ORBIT_SPEED = 0,
+ 
+     ADAPTIVE_LOW_HP_RATIO = 0.40,
+     ADAPTIVE_LOW_HP_HEIGHT = 10.50,

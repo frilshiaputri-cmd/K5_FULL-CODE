@@ -1,0 +1,206 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -1,5 +1,5 @@
+ --========================================================--
+--- IRON SOUL - 24x7 GATE-WATCHDOG COMBAT V61.6
++-- IRON SOUL - BOSS-SAFE 24x7 COMBAT V61.7
+ --
+ -- MAJOR CHANGE:
+ -- Portal/gate progression now uses the GAME'S EXACT route recovered
+@@ -216,7 +216,8 @@
+     -- Adaptive combat position.
+     ADAPTIVE_COMBAT_POSITION = true,
+     ADAPTIVE_PLAYER_HIT_EPSILON = 0.25,
+-    ADAPTIVE_EVADE_HOLD = 2.25,
++    ADAPTIVE_EVADE_HOLD = 3.40,
++    ADAPTIVE_HIT_BURST_HOLD = 1.15,
+     ADAPTIVE_REPEAT_HIT_WINDOW = 3.0,
+     ADAPTIVE_NO_TARGET_DAMAGE = 1.65,
+     ADAPTIVE_RETURN_STABLE = 0.65,
+@@ -224,13 +225,13 @@
+     ADAPTIVE_DEFAULT_HEIGHT = 9.0,
+     ADAPTIVE_DEFAULT_OFFSET = 1.50,
+ 
+-    ADAPTIVE_EVADE_HEIGHT = 8.5,
+-    ADAPTIVE_EVADE_OFFSET = 4.0,
+-    ADAPTIVE_EVADE_YAW = 82,
++    ADAPTIVE_EVADE_HEIGHT = 9.75,
++    ADAPTIVE_EVADE_OFFSET = 4.25,
++    ADAPTIVE_EVADE_YAW = 74,
+ 
+-    ADAPTIVE_WIDE_HEIGHT = 7.0,
+-    ADAPTIVE_WIDE_OFFSET = 5.0,
+-    ADAPTIVE_WIDE_YAW = 118,
++    ADAPTIVE_WIDE_HEIGHT = 10.50,
++    ADAPTIVE_WIDE_OFFSET = 4.75,
++    ADAPTIVE_WIDE_YAW = 104,
+ 
+     -- Verified close-recovery position when our hits are not registering.
+     ADAPTIVE_RECOVERY_HEIGHT = 5.5,
+@@ -239,21 +240,23 @@
+     -- Boss / survival movement. Attacks continue during every profile.
+     ADAPTIVE_BOSS_HP = 1500,
++    ADAPTIVE_THREAT_PLAYER_HP_MULTIPLIER = 3.0,
++    ADAPTIVE_THREAT_PRIORITY_RADIUS = 180,
+     ADAPTIVE_BOSS_HEIGHT = 9.0,
+-    ADAPTIVE_BOSS_OFFSET = 3.0,
+-    ADAPTIVE_BOSS_ORBIT_SPEED = 62,
++    ADAPTIVE_BOSS_OFFSET = 3.75,
++    ADAPTIVE_BOSS_ORBIT_SPEED = 78,
+ 
+-    ADAPTIVE_EVADE_ORBIT_SPEED = 105,
+-    ADAPTIVE_WIDE_ORBIT_SPEED = 135,
++    ADAPTIVE_EVADE_ORBIT_SPEED = 128,
++    ADAPTIVE_WIDE_ORBIT_SPEED = 162,
+ 
+     ADAPTIVE_LOW_HP_RATIO = 0.40,
+-    ADAPTIVE_LOW_HP_HEIGHT = 8.0,
+-    ADAPTIVE_LOW_HP_OFFSET = 5.0,
+-    ADAPTIVE_LOW_HP_ORBIT_SPEED = 145,
++    ADAPTIVE_LOW_HP_HEIGHT = 10.50,
++    ADAPTIVE_LOW_HP_OFFSET = 5.00,
++    ADAPTIVE_LOW_HP_ORBIT_SPEED = 178,
+ 
+     ADAPTIVE_KNOCK_EVADE_HOLD = 1.50,
+-    ADAPTIVE_KNOCK_HEIGHT = 8.0,
++    ADAPTIVE_KNOCK_HEIGHT = 10.50,
+     ADAPTIVE_KNOCK_OFFSET = 5.5,
+-    ADAPTIVE_KNOCK_ORBIT_SPEED = 150,
++    ADAPTIVE_KNOCK_ORBIT_SPEED = 180,
+ 
+     -- Only the exact RoundDoor.Portal can be used, never Workspace.Portal.
+     SECTION_PORTAL_NEAR_DISTANCE = 85,
+@@ -1241,48 +1243,133 @@
+ local function nearestEnemy()
+     if not Root then
+         return nil
+     end
+ 
+     local region =
+         ensureRegion()
+ 
+     if not region then
+         return nil
+     end
+ 
+     local best
+     local bestDist =
+         math.huge
++
++    -- V61.31 threat-first selection. Recent W2 Normal/Hell telemetry showed
++    -- essentially all incoming damage came from the large-HP targets, while
++    -- low/medium mobs usually died without touching the player. A nearby true
++    -- threat therefore wins before nearest-distance cleanup.
++    local threat
++    local threatDist =
++        math.huge
++    local threatHP =
++        -math.huge
++
++    local playerMaxHP =
++        Humanoid
++        and tonumber(Humanoid.MaxHealth)
++        or 0
++
++    local threatThreshold =
++        math.max(
++            tonumber(CFG.ADAPTIVE_BOSS_HP)
++                or 1500,
++            playerMaxHP
++                * (
++                    tonumber(
++                        CFG.ADAPTIVE_THREAT_PLAYER_HP_MULTIPLIER
++                    )
++                    or 3.0
++                )
++        )
+ 
+     for _, enemy in ipairs(
+         liveEnemies()
+     ) do
+         if enemyBelongsToRegion(
+             enemy,
+             region
+         )
+         then
+             local eroot =
+                 modelRoot(enemy)
+ 
+             if eroot then
+                 local dist =
+                     (
+                         eroot.Position
+                         - Root.Position
+                     ).Magnitude
+ 
+                 if dist < bestDist
+                     and dist
+                         <= CFG.MAX_TARGET_DISTANCE
+                 then
+                     best = enemy
+                     bestDist = dist
+                 end
++
++                local ehum =
++                    enemy:
++                        FindFirstChildOfClass(
++                            "Humanoid"
++                        )
++
++                local hp =
++                    ehum
++                    and tonumber(ehum.Health)
++                    or 0
++
++                if dist
++                        <= (
++                            tonumber(
++                                CFG.ADAPTIVE_THREAT_PRIORITY_RADIUS
++                            )
++                            or 180
++                        )
++                    and hp >= threatThreshold
++                    and (
++                        hp > threatHP
++                        or (
++                            hp == threatHP
++                            and dist < threatDist
++                        )
++                    )
++                then
++                    threat = enemy
++                    threatDist = dist
++                    threatHP = hp
++                end
+             end
+         end
+     end
++
++    if threat then
++        if getgenv().IronSoulTelemetry then
++            getgenv().IronSoulTelemetry:
++                Event(
++                    "TARGET_PRIORITY",
++                    "THREAT_FIRST hp="
++                        .. tostring(threatHP)
++                        .. " threshold="
++                        .. tostring(
++                            math.floor(
++                                threatThreshold
++                            )
++                        )
++                        .. " dist="
++                        .. string.format(
++                            "%.1f",
++                            threatDist
++                        )
++                )
++        end
++
++        return threat,
++            threatDist
++    end
+ 
+     return best,
+         bestDist
+ end
