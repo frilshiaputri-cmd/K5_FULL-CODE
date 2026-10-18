@@ -1,0 +1,64 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -2296,9 +2296,13 @@
+                 if not Callbacks[action]
+                     and actionNameMatches(
+                         obj,
+                         action
+                     )
+                 then
++                    -- Keep the actual GUI button. Calling a captured
++                    -- connection function directly can bypass input state.
++                    Callbacks[action .. "Button"] = obj
++
+                     for _, signal in ipairs({
+                         obj.Activated,
+                         obj.MouseButton1Click,
+@@ -2430,19 +2434,52 @@
+ local function castSkill(action)
+     local fn =
+         Callbacks[action]
+ 
+-    if not fn
+-        or not skillReady(action)
++    if not skillReady(action)
+     then
+         return false
+     end
+ 
++    local button = Callbacks[action .. "Button"]
++    -- Mobile-first: activate the game's on-screen skill button.
++
+     -- Allow native skill visual briefly if desired; basic attack visuals
+     -- remain suppressed.
+     SkillCastingUntil =
+         os.clock() + 0.35
+ 
+-    local ok, err =
+-        pcall(fn)
++    local ok, err = false, "no GUI button or callback"
++
++    -- Mobile-first: fire the on-screen button signals. Do not send PC keys.
++    if button and button.Parent and type(firesignal) == "function" then
++        if button.Activated then
++            ok, err = pcall(firesignal, button.Activated)
++        end
++        if not ok and button.MouseButton1Click then
++            ok, err = pcall(firesignal, button.MouseButton1Click)
++        end
++        if not ok and button.MouseButton1Down and button.MouseButton1Up then
++            local downOk = pcall(firesignal, button.MouseButton1Down)
++            task.wait(0.04)
++            local upOk = pcall(firesignal, button.MouseButton1Up)
++            ok = downOk and upOk
++            if not ok then
++                err = "GUI touch-button activation failed"
++            end
++        end
++    end
++
++    if not ok and type(fn) == "function" then
++        ok, err = pcall(fn)
++    end
+ 
+     if ok then
