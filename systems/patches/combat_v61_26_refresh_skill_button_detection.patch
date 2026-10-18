@@ -1,0 +1,30 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -2330,5 +2330,6 @@
+             ~= nil
+             or string.find(n, "ultimate", 1, true)
+                 ~= nil
++            or string.find(n, "skill3", 1, true) ~= nil
+     end
+ 
+@@ -2440,7 +2440,23 @@
+     local button = Callbacks[action .. "Button"]
+     -- Mobile-first: activate the game's on-screen skill button.
+ 
++    -- Refresh the mobile button lookup at cast time: PlayerGui may finish
++    -- loading later, and Delta may not expose getconnections().
++    if not button or not button.Parent then
++        local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
++        if pg then
++            for _, obj in ipairs(pg:GetDescendants()) do
++                if obj:IsA("GuiButton") and actionNameMatches(obj, action) then
++                    button = obj
++                    Callbacks[action .. "Button"] = obj
++                    break
++                end
++            end
++        end
++    end
++
+     -- Allow native skill visual briefly if desired; basic attack visuals
+     -- remain suppressed.
