@@ -76,8 +76,10 @@ do
     env.K5V1NativeAutoSkill = true
 end
 
--- Auto Skill dijalankan oleh sistem native V2 di combat patch chain di bawah.
--- Hindari modul systems/auto_skill.lua (input keyboard Q/E/R) agar tidak duplikat.
+-- Auto Skill memakai pola siklus IronForge: cek AutoFarm/AutoSkill, target dan
+-- status stage, lalu percobaan skill berurutan. Di K5, castSkill/skillReady native
+-- tetap dipakai agar cooldown game dan tombol layar Android dihormati.
+-- Hindari modul keyboard Q/E/R terpisah agar tidak terjadi input ganda.
 local originalLoadRaw = getgenv().IronSoulLoadRaw
 
 local function getPatcher()
@@ -196,7 +198,8 @@ local ok, result = pcall(function()
             "systems/patches/combat_v61_22_skill_no_local_level_gate.patch",
             "systems/patches/combat_v61_23_auto_skill_u.patch",
             "systems/patches/combat_v61_24_force_auto_skill_cycle.patch",
-            "systems/patches/combat_v61_25_unblock_auto_skill_attempts.patch",
+            -- Keep native skillReady cooldown checks (IronForge-inspired gated cycle).
+            -- Do not apply V61.25, which bypasses readiness and can spam unavailable skills.
             "systems/patches/combat_v61_26_refresh_skill_button_detection.patch",
         },
     })
