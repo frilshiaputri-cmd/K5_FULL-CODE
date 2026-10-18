@@ -198,8 +198,9 @@ local ok, result = pcall(function()
             "systems/patches/combat_v61_22_skill_no_local_level_gate.patch",
             "systems/patches/combat_v61_23_auto_skill_u.patch",
             "systems/patches/combat_v61_24_force_auto_skill_cycle.patch",
-            -- Keep native skillReady cooldown checks (IronForge-inspired gated cycle).
-            -- Do not apply V61.25, which bypasses readiness and can spam unavailable skills.
+            -- Level-independent skill attempts: try Skill1/Skill2/SkillU even at level 1.
+            -- The game itself may reject skills that are not unlocked or are on cooldown.
+            "systems/patches/combat_v61_25_unblock_auto_skill_attempts.patch",
             "systems/patches/combat_v61_26_refresh_skill_button_detection.patch",
         },
     })
