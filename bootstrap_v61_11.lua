@@ -226,11 +226,10 @@ getgenv().IronSoulStatus = status
 
 --========================================================--
 -- LEVEL CAP GUARD (K5_FULL-CODE)
--- Default cap: level 30. Read PlayerData first, attribute as fallback.
--- When the cap is reached, stop farming; allow the current dungeon to
--- finish/return to Lobby, but do not queue another farm run from Lobby.
+-- Default cap: level 40. Stop farming and kick this player from the
+-- current server as soon as the authoritative level reaches the cap.
 --========================================================--
-local LEVEL_STOP = tonumber(Config.LEVEL_STOP) or 30
+local LEVEL_STOP = tonumber(Config.LEVEL_STOP) or 40
 getgenv().IronSoulLevelStopReached = false
 
 if LEVEL_STOP > 0 then
@@ -275,7 +274,11 @@ if LEVEL_STOP > 0 then
                 if type(getgenv().IronSoulConfig) == "table" then
                     getgenv().IronSoulConfig.FARM = "OFF"
                 end
-                status("LEVEL CAP | Lv" .. tostring(level) .. "/" .. tostring(LEVEL_STOP) .. " | farming stopped")
+                status("LEVEL CAP | Lv" .. tostring(level) .. "/" .. tostring(LEVEL_STOP) .. " | kicking from server")
+                task.wait(0.5)
+                pcall(function()
+                    LocalPlayer:Kick("K5-HUB: batas level " .. tostring(LEVEL_STOP) .. " tercapai.")
+                end)
                 break
             end
             task.wait(1)
