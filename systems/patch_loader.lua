@@ -339,6 +339,11 @@ return function(opts)
     local repository =
         assert(opts.repository)
 
+    -- Allow patch files to live in this repository while the immutable base
+    -- source remains pinned to a separate upstream repository/commit.
+    local baseRepository =
+        opts.base_repository or repository
+
     local baseCommit =
         assert(opts.base_commit)
 
@@ -358,7 +363,7 @@ return function(opts)
 
     local baseUrl =
         "https://raw.githubusercontent.com/"
-        .. repository
+        .. baseRepository
         .. "/"
         .. baseCommit
         .. "/"
