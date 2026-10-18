@@ -1,0 +1,65 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -5075,6 +5075,7 @@
+         -- Native skills if ready, then direct no-Mouse1 Sword combo.
+         castSkill("Skill2")
+         castSkill("Skill1")
++        castSkill("SkillU")
+ 
+@@ -6098,42 +6098,31 @@
+         if AttackDriverMode == "UNTESTED" then
+             basicAttack(enemy)
+             lastBasic =
+                 os.clock()
+-
+-        -- V61.33: no enemy-HP or player-level gate; use SkillU whenever ready.
+-        elseif Callbacks.SkillU
+-            and skillReady("SkillU")
+-        then
+-            if castSkill("SkillU") then
+-                task.wait(0.18)
+-            end
+-
+-        elseif Callbacks.Skill2
+-            and skillReady("Skill2")
+-        then
+-            if castSkill("Skill2") then
+-                task.wait(0.16)
+-            end
+-
+-        -- V61.32: automatically cast Skill1 whenever its native callback is ready.
+-        elseif Callbacks.Skill1
+-            and skillReady("Skill1")
+-        then
+-            if castSkill("Skill1") then
+-                task.wait(0.16)
+-            end
+-        elseif Callbacks.Skill1
+-            and skillReady("Skill1")
+-        then
+-            if castSkill("Skill1") then
+-                task.wait(0.13)
+-            end
+-        elseif os.clock()
+-                - lastBasic
+-                >= CFG.BASIC_INTERVAL
+-        then
++        end
++
++        -- V61.34: don't require a discovered GUI callback before trying skills.
++        -- castSkill falls back to Q/E/R input when a button callback is absent.
++        if skillReady("SkillU") then
++            castSkill("SkillU")
++        end
++        if skillReady("Skill2") then
++            castSkill("Skill2")
++        end
++        if skillReady("Skill1") then
++            castSkill("Skill1")
++        end
++
++        if os.clock() - lastBasic >= CFG.BASIC_INTERVAL then
+             basicAttack(enemy)
+             lastBasic =
+                 os.clock()
+         end
