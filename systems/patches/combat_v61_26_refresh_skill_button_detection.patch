@@ -1,30 +1,98 @@
 --- a/systems/combat.lua
 +++ b/systems/combat.lua
-@@ -2330,5 +2330,6 @@
+@@ -2219,7 +2219,24 @@
+ local Callbacks = {}
+ 
+ local function actionNameMatches(obj, action)
+-    local n =
+-        string.lower(obj.Name)
++    -- Match both object names and visible mobile-button labels/metadata.
++    local parts = { tostring(obj.Name or "") }
++    pcall(function()
++        table.insert(parts, tostring(obj.Text or ""))
++    end)
++    pcall(function()
++        table.insert(parts, tostring(obj:GetAttribute("Skill") or ""))
++        table.insert(parts, tostring(obj:GetAttribute("Action") or ""))
++        table.insert(parts, tostring(obj:GetAttribute("Ability") or ""))
++    end)
++    local n = string.lower(table.concat(parts, " "))
++    n = string.gsub(n, "[%s_%-]", "")
+ 
+     if action == "Skill1" then
+-        return n == "skill1"
++        return n == "skill1"
+             or string.find(
+                 n,
+                 "skill1",
+@@ -2235,7 +2252,11 @@
+                 1,
+                 true
+             )
+-            ~= nil
++            ~= nil
++            or string.find(n, "ability1", 1, true) ~= nil
++            or string.find(n, "skillone", 1, true) ~= nil
++            or string.find(n, "slot1", 1, true) ~= nil
+     end
+ 
+     if action == "Skill2" then
+@@ -2248,7 +2269,11 @@
+                 1,
+                 true
+             )
+-            ~= nil
++            ~= nil
++            or string.find(n, "ability2", 1, true) ~= nil
++            or string.find(n, "skilltwo", 1, true) ~= nil
++            or string.find(n, "slot2", 1, true) ~= nil
+     end
+ 
+     return false
+@@ -2330,5 +2355,8 @@
              ~= nil
              or string.find(n, "ultimate", 1, true)
                  ~= nil
 +            or string.find(n, "skill3", 1, true) ~= nil
++            or string.find(n, "ability3", 1, true) ~= nil
++            or string.find(n, "slot3", 1, true) ~= nil
      end
  
-@@ -2440,7 +2440,23 @@
+     return false
+@@ -2440,7 +2468,28 @@
      local button = Callbacks[action .. "Button"]
      -- Mobile-first: activate the game's on-screen skill button.
  
-+    -- Refresh the mobile button lookup at cast time: PlayerGui may finish
-+    -- loading later, and Delta may not expose getconnections().
-+    if not button or not button.Parent then
-+        local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-+        if pg then
-+            for _, obj in ipairs(pg:GetDescendants()) do
-+                if obj:IsA("GuiButton") and actionNameMatches(obj, action) then
-+                    button = obj
-+                    Callbacks[action .. "Button"] = obj
-+                    break
-+                end
-+            end
-+        end
+-    -- Refresh the mobile button lookup at cast time: PlayerGui may finish
+-    -- loading later, and Delta may not expose getconnections().
++    -- Revalidate cached buttons because mobile HUDs can be rebuilt on map changes.
++    if button and (
++        not button.Parent
++        or not button:IsDescendantOf(LocalPlayer)
++        or (button:IsA("GuiObject") and not button.Visible)
++    ) then
++        button = nil
++        Callbacks[action .. "Button"] = nil
 +    end
 +
++    -- Refresh the mobile button lookup at cast time: PlayerGui may finish
++    -- loading later, and Delta may not expose getconnections().
+     if not button or not button.Parent then
+         local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+         if pg then
+             for _, obj in ipairs(pg:GetDescendants()) do
+                 if obj:IsA("GuiButton") and actionNameMatches(obj, action) then
++                    -- Ignore hidden/disabled buttons to avoid selecting stale HUD entries.
++                    if not obj.Visible or not obj.Active then
++                        continue
++                    end
+                     button = obj
+                     Callbacks[action .. "Button"] = obj
+                     break
+                 end
+             end
+         end
+     end
+ 
      -- Allow native skill visual briefly if desired; basic attack visuals
      -- remain suppressed.
