@@ -39,7 +39,7 @@ local function getPatcher()
     end
 
     local source = game:HttpGet(
-        "https://raw.githubusercontent.com/MUshihara/ironsoulkaitun/main/systems/patch_loader.lua?t="
+        "https://raw.githubusercontent.com/frilshiaputri-cmd/K5_FULL-CODE/main/systems/patch_loader.lua?t="
             .. tostring(os.time())
     )
 
@@ -85,86 +85,13 @@ if type(originalLoadRaw) == "function" then
     end)
 end
 
---========================================================--
--- AUTO SKILL (ported from IronForge AutoSkill behavior)
--- Automatically sends E, Q, R while an alive NPC target is nearby.
--- Runs once per client session and only from the Dungeon combat route.
---========================================================--
+-- K5 mobile Auto Skill: use the native combat skill chain and mobile GUI button patches.
+-- Avoid the separate keyboard E/Q/R worker; it does not activate Android touch controls.
 do
     local env = getgenv()
-    if not env.IronSoulAutoSkillWorker then
-        env.IronSoulAutoSkillWorker = true
-
-        task.spawn(function()
-            local Players = game:GetService("Players")
-            local VirtualInputManager = game:GetService("VirtualInputManager")
-            local LocalPlayer = Players.LocalPlayer
-            local keys = {
-                {Name = "E", Cooldown = 0.70},
-                {Name = "Q", Cooldown = 0.70},
-                {Name = "R", Cooldown = 1.50},
-            }
-            local nextUse = {E = 0, Q = 0, R = 0}
-            local lastCycle = 0
-
-            local function findTarget()
-                local character = LocalPlayer and LocalPlayer.Character
-                local originPart = character and character:FindFirstChild("HumanoidRootPart")
-                if not originPart then return nil end
-
-                local best, bestDistance = nil, 600
-                for _, object in ipairs(workspace:GetDescendants()) do
-                    if object:IsA("Model")
-                        and object ~= character
-                        and Players:GetPlayerFromCharacter(object) == nil
-                    then
-                        local humanoid = object:FindFirstChildOfClass("Humanoid")
-                        local root = object:FindFirstChild("HumanoidRootPart") or object.PrimaryPart
-                        if humanoid and humanoid.Health > 0 and root and root:IsA("BasePart") then
-                            local distance = (originPart.Position - root.Position).Magnitude
-                            if distance < bestDistance then
-                                best, bestDistance = object, distance
-                            end
-                        end
-                    end
-                end
-                return best
-            end
-
-            local function pressSkill(name)
-                local keyCode = Enum.KeyCode[name]
-                if not keyCode then return false end
-                local ok = pcall(function()
-                    VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-                    task.wait(0.025)
-                    VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
-                end)
-                return ok
-            end
-
-            local status = env.IronSoulStatus
-            if type(status) == "function" then
-                pcall(status, "Auto Skill | enabled (E/Q/R)")
-            end
-
-            while env.IronSoulAutoSkillWorker and LocalPlayer and LocalPlayer.Parent do
-                local now = os.clock()
-                if now - lastCycle >= 2.5 and findTarget() then
-                    lastCycle = now
-                    for _, skill in ipairs(keys) do
-                        now = os.clock()
-                        if now >= (nextUse[skill.Name] or 0) then
-                            if pressSkill(skill.Name) then
-                                nextUse[skill.Name] = now + skill.Cooldown
-                            end
-                            task.wait(0.12)
-                        end
-                    end
-                end
-                task.wait(0.20)
-            end
-        end)
-    end
+    env.IronSoulConfig = env.IronSoulConfig or {}
+    env.IronSoulConfig.AutoSkill = true
+    env.K5V1NativeAutoSkill = true
 end
 
 -- Keep an unredirected loader available to the wrappers so they can reuse the
@@ -202,7 +129,8 @@ getgenv().IronSoulLoadRaw = routedLoadRaw
 
 local ok, result = pcall(function()
     return getPatcher()({
-        repository = "MUshihara/ironsoulkaitun",
+        repository = "frilshiaputri-cmd/K5_FULL-CODE",
+        base_repository = "MUshihara/ironsoulkaitun",
         base_commit = "1d47f7f50ec8ecd92bca691b17d586d6bdecfa55",
         path = "systems/combat.lua",
         patch_paths = {
@@ -216,6 +144,11 @@ local ok, result = pcall(function()
             "systems/patches/combat_v61_14_world1_tween_open_gate.patch",
             "systems/patches/combat_v61_14_far_traversal_tween.patch",
             "systems/patches/combat_v61_14_3_fast_settlement.patch",
+            "systems/patches/combat_v61_15_skill_input_fallback.patch",
+            "systems/patches/combat_v61_23_auto_skill_u.patch",
+            "systems/patches/combat_v61_24_force_auto_skill_cycle.patch",
+            "systems/patches/combat_v61_25_unblock_auto_skill_attempts.patch",
+            "systems/patches/combat_v61_26_refresh_skill_button_detection.patch",
         },
     })
 end)
