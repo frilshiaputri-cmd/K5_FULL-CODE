@@ -279,9 +279,22 @@ if LEVEL_STOP > 0 then
                     local okData, data = pcall(function()
                         return util:GetPlayerData(LocalPlayer)
                     end)
-                    if okData and type(data) == "table" and type(data.LevelData) == "table" then
-                        local dataLevel = tonumber(data.LevelData.Level)
-                        if dataLevel and dataLevel > bestLevel then bestLevel = dataLevel end
+                    if okData and type(data) == "table" then
+                        -- Support known player-data layouts without assuming LevelData
+                        -- is always present or always populated on early join.
+                        local candidates = {
+                            data.LevelData and data.LevelData.Level,
+                            data.LevelData and data.LevelData.level,
+                            data.Level,
+                            data.level,
+                            data.PlayerLevel,
+                            data.Player_Level,
+                            data.LG_Level,
+                        }
+                        for _, raw in ipairs(candidates) do
+                            local n = tonumber(raw)
+                            if n and n > bestLevel then bestLevel = n end
+                        end
                     end
                 end
             end
@@ -297,15 +310,21 @@ if LEVEL_STOP > 0 then
                 getgenv().IronSoulLevelStopLevel = level
                 if type(getgenv().IronSoulConfig) == "table" then
                     getgenv().IronSoulConfig.FARM = "OFF"
+                    getgenv().IronSoulConfig.AutoFarm = false
                 end
-                status("LEVEL CAP | Lv" .. tostring(level) .. "/" .. tostring(LEVEL_STOP) .. " | kicking from server")
+                -- Stop any locally exposed farm controller before requesting a kick.
+                for _, key in ipairs({"IronSoulStopFarm", "K5StopFarm", "StopAutoFarm"}) do
+                    local stopFn = getgenv()[key]
+                    if type(stopFn) == "function" then pcall(stopFn) end
+                end
+                status("LEVEL CAP | Lv" .. tostring(level) .. "/" .. tostring(LEVEL_STOP) .. " | FARM OFF")
                 task.wait(0.5)
                 pcall(function()
                     LocalPlayer:Kick("K5-HUB: batas level " .. tostring(LEVEL_STOP) .. " tercapai.")
                 end)
                 break
             end
-            task.wait(1)
+            task.wait(0.5)
         end
     end)
 end
