@@ -3,6 +3,7 @@ getgenv().IronSoulConfig = {
     FARM = "NEWBIE",
     TICKETS = "SMART",
     HEADLESS = true,
+    LEVEL_STOP = 40,
 }
 
 loadstring(game:HttpGet(
