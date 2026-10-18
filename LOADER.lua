@@ -6,5 +6,5 @@ getgenv().IronSoulConfig = {
 }
 
 loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/MUshihara/ironsoulkaitun/main/bootstrap.lua"
+    "https://raw.githubusercontent.com/frilshiaputri-cmd/K5_FULL-CODE/main/bootstrap_v61_11.lua"
 ))()
