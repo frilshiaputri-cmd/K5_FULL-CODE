@@ -226,11 +226,10 @@ getgenv().IronSoulStatus = status
 
 --========================================================--
 -- LEVEL CAP GUARD (K5_FULL-CODE)
--- Default cap: level 40. Stop farming and kick this player from the
--- current server as soon as the authoritative level reaches the cap.
+-- Stop farming and disconnect from the current server/map at level 40.
 --========================================================--
 local LEVEL_STOP = math.max(1, tonumber(Config.LEVEL_STOP) or 40)
-getgenv().IronSoulLevelStopReached = false
+getgenv().IronSoulLevelStopReached = getgenv().IronSoulLevelStopReached == true
 
 if LEVEL_STOP > 0 then
     task.spawn(function()
@@ -238,31 +237,16 @@ if LEVEL_STOP > 0 then
         local dataModule
 
         local function readLevel()
-            -- Read common replicated level attributes first; LG_Level remains the
-            -- primary game-specific source, while aliases cover runtime variants.
-            local bestLevel = 0
-            for _, attrName in ipairs({"LG_Level", "Level", "PlayerLevel", "Player_Level"}) do
-                local okAttr, raw = pcall(function()
-                    return LocalPlayer:GetAttribute(attrName)
-                end)
-                local n = okAttr and tonumber(raw) or nil
-                if n and n > bestLevel then bestLevel = n end
+            -- Match the game's primary level source first.
+            local okAttr, raw = pcall(function()
+                return LocalPlayer:GetAttribute("LG_Level")
+            end)
+            local level = okAttr and tonumber(raw) or nil
+            if level and level > 0 then
+                return level
             end
 
-            -- Also inspect common leaderstats values, when the game exposes them.
-            local stats = LocalPlayer:FindFirstChild("leaderstats")
-            if stats then
-                for _, value in ipairs(stats:GetDescendants()) do
-                    if value:IsA("IntValue") or value:IsA("NumberValue") or value:IsA("StringValue") then
-                        local name = string.lower(value.Name)
-                        if name == "level" or name == "playerlevel" or name == "lg_level" then
-                            local n = tonumber(value.Value)
-                            if n and n > bestLevel then bestLevel = n end
-                        end
-                    end
-                end
-            end
-
+            -- Fall back to DataUtil only when LG_Level is not populated yet.
             if not dataModule or not dataModule.Parent then
                 dataModule = nil
                 for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
@@ -280,47 +264,49 @@ if LEVEL_STOP > 0 then
                         return util:GetPlayerData(LocalPlayer)
                     end)
                     if okData and type(data) == "table" then
-                        -- Support known player-data layouts without assuming LevelData
-                        -- is always present or always populated on early join.
+                        local levelData = type(data.LevelData) == "table" and data.LevelData or nil
                         local candidates = {
-                            data.LevelData and data.LevelData.Level,
-                            data.LevelData and data.LevelData.level,
+                            levelData and levelData.Level,
+                            levelData and levelData.level,
                             data.Level,
                             data.level,
                             data.PlayerLevel,
                             data.Player_Level,
                             data.LG_Level,
                         }
-                        for _, raw in ipairs(candidates) do
-                            local n = tonumber(raw)
-                            if n and n > bestLevel then bestLevel = n end
+                        for _, candidate in ipairs(candidates) do
+                            local n = tonumber(candidate)
+                            if n and n > 0 then
+                                return n
+                            end
                         end
                     end
                 end
             end
 
-            if bestLevel > 0 then return bestLevel end
             return nil
         end
 
         while LocalPlayer and LocalPlayer.Parent do
             local level = readLevel()
-            if level and level >= LEVEL_STOP then
+            if getgenv().IronSoulLevelStopReached or (level and level >= LEVEL_STOP) then
                 getgenv().IronSoulLevelStopReached = true
-                getgenv().IronSoulLevelStopLevel = level
+                getgenv().IronSoulLevelStopLevel = level or LEVEL_STOP
                 if type(getgenv().IronSoulConfig) == "table" then
                     getgenv().IronSoulConfig.FARM = "OFF"
                     getgenv().IronSoulConfig.AutoFarm = false
                 end
-                -- Stop any locally exposed farm controller before requesting a kick.
+
+                -- Stop any locally exposed farm controller before disconnecting.
                 for _, key in ipairs({"IronSoulStopFarm", "K5StopFarm", "StopAutoFarm"}) do
                     local stopFn = getgenv()[key]
                     if type(stopFn) == "function" then pcall(stopFn) end
                 end
-                status("LEVEL CAP | Lv" .. tostring(level) .. "/" .. tostring(LEVEL_STOP) .. " | FARM OFF")
+
+                status("LEVEL CAP | Lv" .. tostring(level or LEVEL_STOP) .. "/" .. tostring(LEVEL_STOP) .. " | FARM OFF")
                 task.wait(0.5)
                 pcall(function()
-                    LocalPlayer:Kick("K5-HUB: batas level " .. tostring(LEVEL_STOP) .. " tercapai.")
+                    LocalPlayer:Kick("K5-HUB: batas level " .. tostring(LEVEL_STOP) .. " tercapai. Keluar dari server/map.")
                 end)
                 break
             end
