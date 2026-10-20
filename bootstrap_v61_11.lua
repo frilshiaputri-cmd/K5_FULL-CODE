@@ -570,10 +570,10 @@ local route
 local routeName
 
 if game.PlaceId == TUTORIAL_PLACE_ID then
-    -- Explicit versioned tutorial: V61.10 created this mobile-safe path, but
-    -- the previous bootstrap accidentally kept routing to the old file.
-    route = "systems/tutorial_v61_10.lua"
-    routeName = "Tutorial"
+    -- Tutorial automation is disabled to avoid delaying the game's first-login
+    -- intro. Do not load any tutorial script or redirect to upstream tutorial.
+    status("Tutorial disabled | preserving game intro")
+    return
 
 elseif game.PlaceId == LOBBY_PLACE_ID
     or workspace:GetAttribute("WorldName") == "Lobby"
