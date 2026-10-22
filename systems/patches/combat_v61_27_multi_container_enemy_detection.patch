@@ -1,0 +1,52 @@
+--- a/systems/combat.lua
++++ b/systems/combat.lua
+@@ -1166,22 +1166,27 @@
+-local function liveEnemies()
+-    local container =
+-        enemyContainer()
+-
+-    local out = {}
+-
+-    if not container then
+-        return out
+-    end
+-
+-    for _, model in ipairs(
+-        container:GetChildren()
+-    ) do
+-        if model:IsA("Model")
+-            and enemyAlive(model)
+-        then
+-            table.insert(out, model)
+-        end
+-    end
+-
+-    return out
+-end
++local function liveEnemies()
++    -- K5_FULL-CODE enemy detection: scan both supported enemy roots.
++    -- Some dungeon places parent NPCs under WorldEnemys instead of EnemyNpc.
++    local containers = {
++        enemyContainer(),
++        workspace:FindFirstChild("WorldEnemys"),
++    }
++
++    local out = {}
++    local seen = {}
++
++    for _, container in ipairs(containers) do
++        if container then
++            for _, model in ipairs(container:GetDescendants()) do
++                if model:IsA("Model")
++                    and not seen[model]
++                    and enemyAlive(model)
++                then
++                    seen[model] = true
++                    table.insert(out, model)
++                end
++            end
++        end
++    end
++
++    return out
++end
