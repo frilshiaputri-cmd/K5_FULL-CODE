@@ -26,10 +26,15 @@
 +local function liveEnemies()
 +    -- K5_FULL-CODE enemy detection: scan both supported enemy roots.
 +    -- Some dungeon places parent NPCs under WorldEnemys instead of EnemyNpc.
-+    local containers = {
-+        enemyContainer(),
-+        workspace:FindFirstChild("WorldEnemys"),
-+    }
++    local containers = {}
++    local enemyNpc = enemyContainer()
++    local worldEnemies = workspace:FindFirstChild("WorldEnemys")
++    if enemyNpc then
++        table.insert(containers, enemyNpc)
++    end
++    if worldEnemies and worldEnemies ~= enemyNpc then
++        table.insert(containers, worldEnemies)
++    end
 +
 +    local out = {}
 +    local seen = {}
