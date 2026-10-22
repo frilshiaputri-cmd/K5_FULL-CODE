@@ -1,6 +1,6 @@
 --- a/systems/combat.lua
 +++ b/systems/combat.lua
-@@ -1166,22 +1166,27 @@
+@@ -1166,22 +1166,32 @@
 -local function liveEnemies()
 -    local container =
 -        enemyContainer()
