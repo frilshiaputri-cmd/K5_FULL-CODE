@@ -179,7 +179,7 @@ end
 
 local ok, result = pcall(function()
     return getPatcher()({
-        repository = "frilshiaputri-cmd/Ironsoulkaitun",
+        repository = "frilshiaputri-cmd/K5_FULL-CODE",
         base_repository = "MUshihara/ironsoulkaitun",
         base_commit = "1d47f7f50ec8ecd92bca691b17d586d6bdecfa55",
         path = "systems/combat.lua",
@@ -202,6 +202,7 @@ local ok, result = pcall(function()
             -- The game itself may reject skills that are not unlocked or are on cooldown.
             "systems/patches/combat_v61_25_unblock_auto_skill_attempts.patch",
             "systems/patches/combat_v61_26_refresh_skill_button_detection.patch",
+            "systems/patches/combat_v61_27_multi_container_enemy_detection.patch",
         },
     })
 end)
